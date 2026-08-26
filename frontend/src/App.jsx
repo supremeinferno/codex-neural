@@ -3,8 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./index.css";
 
-const API_URL =
-  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_URL = "http://127.0.0.1:8000";
 
 function App() {
   const [topic, setTopic] = useState("");
@@ -50,46 +49,49 @@ function App() {
     return () => clearInterval(interval);
   }, [loading]);
 
+  
   const runResearch = async () => {
-    if (!topic.trim() || loading) return;
+  if (!topic.trim() || loading) return;
 
-    setLoading(true);
-    setError("");
-    setReport("");
-    setActiveStage(0);
+  setLoading(true);
+  setError("");
+  setReport("");
+  setActiveStage(0);
 
-    try {
-      const response = await fetch(`${API_URL}/api/research`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          topic: topic.trim(),
-        }),
-      });
+  try {
+    const response = await fetch(`${API_URL}/api/research`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        topic: topic.trim(),
+      }),
+    });
 
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      setReport(
-        data.report ||
-          data.result ||
-          data.final_report ||
-          data.content ||
-          "No report was returned."
-      );
-    } catch (err) {
-       console.error("ERROR:", err);
-
-      setError(err.message);
-    } finally {
-      setLoading(false);
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`);
     }
-  };
+
+    const data = await response.json();
+
+    // Process your response here
+    // setReport(data.report);
+
+  } catch (error) {
+    console.error("Research error:", error);
+
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      setError(
+        "Backend server is not connected. Please start the FastAPI server and try again."
+      );
+    } else {
+      setError(error.message || "Something went wrong. Please try again.");
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
