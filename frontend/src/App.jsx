@@ -35,6 +35,8 @@ function App() {
     },
   ];
 
+  // ---------------- RESEARCH PROGRESS ---------------- //
+
   useEffect(() => {
     if (!loading) return;
 
@@ -49,49 +51,66 @@ function App() {
     return () => clearInterval(interval);
   }, [loading]);
 
-  
+  // ---------------- RUN RESEARCH ---------------- //
+
   const runResearch = async () => {
-  if (!topic.trim() || loading) return;
+    if (!topic.trim() || loading) return;
 
-  setLoading(true);
-  setError("");
-  setReport("");
-  setActiveStage(0);
+    setLoading(true);
+    setError("");
+    setReport("");
+    setActiveStage(0);
 
-  try {
-    const response = await fetch(`${API_URL}/api/research`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        topic: topic.trim(),
-      }),
-    });
+    try {
+      const response = await fetch(`${API_URL}/api/research`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic: topic.trim(),
+        }),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Server returned ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Backend should return:
+      // { "report": "..." }
+
+      if (!data.report) {
+        throw new Error("Backend returned an empty research report.");
+      }
+
+      // IMPORTANT:
+      // This was previously commented out.
+      // Without this, React returns to the search screen.
+      setReport(data.report);
+      setActiveStage(stages.length - 1);
+    } catch (error) {
+      console.error("Research error:", error);
+
+      if (
+        error instanceof TypeError &&
+        error.message === "Failed to fetch"
+      ) {
+        setError(
+          "Backend server is not connected. Please start the FastAPI server and try again."
+        );
+      } else {
+        setError(
+          error.message || "Something went wrong. Please try again."
+        );
+      }
+    } finally {
+      setLoading(false);
     }
+  };
 
-    const data = await response.json();
-
-    // Process your response here
-    // setReport(data.report);
-
-  } catch (error) {
-    console.error("Research error:", error);
-
-    if (error instanceof TypeError && error.message === "Failed to fetch") {
-      setError(
-        "Backend server is not connected. Please start the FastAPI server and try again."
-      );
-    } else {
-      setError(error.message || "Something went wrong. Please try again.");
-    }
-  } finally {
-    setLoading(false);
-  }
-};
+  // ---------------- KEYBOARD HANDLER ---------------- //
 
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -99,6 +118,8 @@ function App() {
       runResearch();
     }
   };
+
+  // ---------------- RESET RESEARCH ---------------- //
 
   const resetResearch = () => {
     setTopic("");
@@ -110,18 +131,22 @@ function App() {
 
   return (
     <div className="app">
+      {/* ================= BACKGROUND ================= */}
 
-      {/* Background */}
       <div className="ambient ambient-one"></div>
       <div className="ambient ambient-two"></div>
 
       <div className="stars">
         {Array.from({ length: 28 }).map((_, index) => (
-          <span key={index} className={`star star-${index % 5}`}></span>
+          <span
+            key={index}
+            className={`star star-${index % 5}`}
+          ></span>
         ))}
       </div>
 
-      {/* NAVBAR */}
+      {/* ================= NAVBAR ================= */}
+
       <nav className="navbar">
         <div className="logo">NEXUS.</div>
 
@@ -135,9 +160,7 @@ function App() {
 
       {!report && (
         <main className="main-stage">
-
           <section className="hero">
-
             <div className="eyebrow">
               <span></span>
               MULTI-AGENT RESEARCH
@@ -154,10 +177,13 @@ function App() {
               challenge, and synthesize the signal hidden inside the web.
             </p>
 
-            {/* ORBITAL OBJECT */}
+            {/* ================= ORBITAL OBJECT ================= */}
 
-            <div className={`orbital-system ${loading ? "is-loading" : ""}`}>
-
+            <div
+              className={`orbital-system ${
+                loading ? "is-loading" : ""
+              }`}
+            >
               <div className="orbit orbit-large"></div>
               <div className="orbit orbit-medium"></div>
               <div className="orbit orbit-small"></div>
@@ -171,18 +197,18 @@ function App() {
               <div className="orbit-dot dot-one"></div>
               <div className="orbit-dot dot-two"></div>
               <div className="orbit-dot dot-three"></div>
-
             </div>
 
-            {/* INPUT */}
+            {/* ================= INPUT ================= */}
 
             {!loading && (
               <>
                 <div className="research-box">
-
                   <textarea
                     value={topic}
-                    onChange={(event) => setTopic(event.target.value)}
+                    onChange={(event) =>
+                      setTopic(event.target.value)
+                    }
                     onKeyDown={handleKeyDown}
                     placeholder="What do you want to investigate?"
                     rows="2"
@@ -195,7 +221,6 @@ function App() {
                     EXPLORE
                     <span>↗</span>
                   </button>
-
                 </div>
 
                 <div className="shortcut">
@@ -205,11 +230,10 @@ function App() {
               </>
             )}
 
-            {/* LOADING STATE */}
+            {/* ================= LOADING STATE ================= */}
 
             {loading && (
               <section className="research-progress">
-
                 <div className="progress-header">
                   <div>
                     <span className="progress-label">
@@ -230,21 +254,17 @@ function App() {
                 </div>
 
                 <div className="agent-pipeline">
-
                   {stages.map((stage, index) => {
-
                     const isActive = index === activeStage;
                     const isDone = index < activeStage;
 
                     return (
                       <React.Fragment key={stage.number}>
-
                         <div
                           className={`agent-stage ${
                             isActive ? "active" : ""
                           } ${isDone ? "done" : ""}`}
                         >
-
                           <div className="stage-number">
                             {isDone ? "✓" : stage.number}
                           </div>
@@ -264,30 +284,30 @@ function App() {
                           {isActive && (
                             <div className="stage-pulse"></div>
                           )}
-
                         </div>
 
                         {index < stages.length - 1 && (
                           <div
                             className={`pipeline-connector ${
-                              index < activeStage ? "complete" : ""
+                              index < activeStage
+                                ? "complete"
+                                : ""
                             }`}
                           ></div>
                         )}
-
                       </React.Fragment>
                     );
                   })}
-
                 </div>
 
                 <p className="progress-note">
-                  Nexus is gathering evidence before generating your report.
-                  This may take a moment.
+                  Nexus is gathering evidence before generating your
+                  report. This may take a moment.
                 </p>
-
               </section>
             )}
+
+            {/* ================= ERROR ================= */}
 
             {error && (
               <div className="error-box">
@@ -295,9 +315,7 @@ function App() {
                 <span>{error}</span>
               </div>
             )}
-
           </section>
-
         </main>
       )}
 
@@ -305,11 +323,8 @@ function App() {
 
       {report && !loading && (
         <main className="report-page">
-
           <section className="report-header">
-
             <div className="report-heading">
-
               <div className="eyebrow">
                 <span></span>
                 RESEARCH OUTPUT
@@ -318,9 +333,9 @@ function App() {
               <h1>{topic}</h1>
 
               <p>
-                Synthesized by the Nexus multi-agent research pipeline.
+                Synthesized by the Nexus multi-agent research
+                pipeline.
               </p>
-
             </div>
 
             <button
@@ -330,53 +345,44 @@ function App() {
               <span>+</span>
               NEW RESEARCH
             </button>
-
           </section>
 
-          {/* PIPELINE */}
+          {/* ================= PIPELINE ================= */}
 
           <section className="report-pipeline">
-
             {stages.map((stage, index) => (
               <React.Fragment key={stage.number}>
-
                 <div className="report-stage">
-
                   <span>{stage.number}</span>
 
                   <div>
                     <strong>{stage.title}</strong>
                     <small>{stage.description}</small>
                   </div>
-
                 </div>
 
                 {index < stages.length - 1 && (
                   <div className="report-line"></div>
                 )}
-
               </React.Fragment>
             ))}
-
           </section>
 
-          {/* REPORT CARD */}
+          {/* ================= REPORT CARD ================= */}
 
           <article className="report-card">
-
             <div className="report-card-top">
               <span>FINAL RESEARCH REPORT</span>
+
               <span className="report-status">
                 ● VERIFIED
               </span>
             </div>
 
             <div className="report-content">
-
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-
                   h1: ({ children }) => (
                     <h1 className="md-h1">{children}</h1>
                   ),
@@ -462,39 +468,31 @@ function App() {
               >
                 {report}
               </ReactMarkdown>
-
             </div>
-
           </article>
 
-          {/* BOTTOM CTA */}
+          {/* ================= BOTTOM CTA ================= */}
 
           <section className="bottom-cta">
-
             <div className="cta-orb"></div>
 
             <div>
               <span>ANOTHER QUESTION?</span>
 
-              <h2>
-                Keep digging.
-              </h2>
+              <h2>Keep digging.</h2>
             </div>
 
             <button onClick={resetResearch}>
               START NEW RESEARCH
               <span>↗</span>
             </button>
-
           </section>
-
         </main>
       )}
 
-      {/* FOOTER */}
+      {/* ================= FOOTER ================= */}
 
       <footer>
-
         <div className="footer-brand">
           NEXUS<span>.</span>
         </div>
@@ -506,9 +504,7 @@ function App() {
         <div className="footer-right">
           MULTI-AGENT INTELLIGENCE
         </div>
-
       </footer>
-
     </div>
   );
 }
