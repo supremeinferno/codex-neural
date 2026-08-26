@@ -1,0 +1,33 @@
+# FastAPI
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+
+# OpenAI / LangChain
+langchain-core>=1.2,<2
+
+# Agent orchestration
+langgraph>=1.2,<2
+
+# Web research
+tavily-python>=0.7,<1
+beautifulsoup4>=4.12,<5
+requests>=2.31,<3
+lxml>=5,<7
+
+# Environment variables
+python-dotenv>=1,<2
+
+# Mistral
+langchain-mistralai==1.1.6
+
+# Google Gemini
+langchain-google-genai==4.3.2
+
+# Grok / xAI
+langchain-xai==1.3.0
+
+langchain>=1.2,<2
+
+mistralai>=1,<2
+
+rich>=13,<14
