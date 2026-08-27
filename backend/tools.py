@@ -1,6 +1,6 @@
 from langchain.tools import tool
 from tavily import TavilyClient
-from mistralai.client import Mistral
+from mistralai import Mistral
 from bs4 import BeautifulSoup
 import requests
 import os
