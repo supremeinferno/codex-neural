@@ -3,9 +3,37 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./index.css";
 
+import Login from "./login.jsx";
+import Register from "./register.jsx";
+import Individual from "./Individual.jsx";
+
 const API_URL = "http://127.0.0.1:8000";
 
 function App() {
+  // ================= AUTH =================
+
+  const [authPage, setAuthPage] = useState("login");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState(null);
+
+  const handleLogin = (loggedInUser) => {
+    setUser(loggedInUser);
+    setIsLoggedIn(true);
+    setAuthPage("login");
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setIsLoggedIn(false);
+    setAuthPage("login");
+  };
+
+  // ================= MAIN TABS =================
+
+  const [activeTab, setActiveTab] = useState("nexus");
+
+  // ================= NEXUS RESEARCH =================
+
   const [topic, setTopic] = useState("");
   const [report, setReport] = useState("");
   const [loading, setLoading] = useState(false);
@@ -78,16 +106,10 @@ function App() {
 
       const data = await response.json();
 
-      // Backend should return:
-      // { "report": "..." }
-
       if (!data.report) {
         throw new Error("Backend returned an empty research report.");
       }
 
-      // IMPORTANT:
-      // This was previously commented out.
-      // Without this, React returns to the search screen.
       setReport(data.report);
       setActiveStage(stages.length - 1);
     } catch (error) {
@@ -129,6 +151,78 @@ function App() {
     setActiveStage(0);
   };
 
+  // ================= LOGIN / REGISTER =================
+
+  if (!isLoggedIn) {
+    if (authPage === "register") {
+      return (
+        <Register
+          onBackToLogin={() => {
+            setAuthPage("login");
+          }}
+        />
+      );
+    }
+
+    return (
+      <Login
+        onLogin={handleLogin}
+        onCreateAccount={() => {
+          setAuthPage("register");
+        }}
+      />
+    );
+  }
+
+  // ================= INDIVIDUAL TAB =================
+
+  if (activeTab === "individual") {
+    return (
+      <div className="app">
+        <div className="ambient ambient-one"></div>
+        <div className="ambient ambient-two"></div>
+
+        <div className="stars">
+          {Array.from({ length: 28 }).map((_, index) => (
+            <span
+              key={index}
+              className={`star star-${index % 5}`}
+            ></span>
+          ))}
+        </div>
+
+        <nav className="navbar">
+          <div className="logo">CODEX.</div>
+
+          <div className="mode-tabs">
+            <button
+              className="mode-tab"
+              onClick={() => setActiveTab("individual")}
+            >
+              INDIVIDUAL
+            </button>
+
+            <button
+              className="mode-tab active"
+              onClick={() => setActiveTab("nexus")}
+            >
+              NEXUS
+            </button>
+          </div>
+
+          <div className="status">
+            <span className="status-dot"></span>
+            DOCUMENT ANALYZER ONLINE
+          </div>
+        </nav>
+
+        <Individual />
+      </div>
+    );
+  }
+
+  // ================= NEXUS INTERFACE =================
+
   return (
     <div className="app">
       {/* ================= BACKGROUND ================= */}
@@ -149,6 +243,22 @@ function App() {
 
       <nav className="navbar">
         <div className="logo">NEXUS.</div>
+
+        <div className="mode-tabs">
+          <button
+            className="mode-tab"
+            onClick={() => setActiveTab("individual")}
+          >
+            INDIVIDUAL
+          </button>
+
+          <button
+            className="mode-tab active"
+            onClick={() => setActiveTab("nexus")}
+          >
+            NEXUS
+          </button>
+        </div>
 
         <div className="status">
           <span className="status-dot"></span>
@@ -180,9 +290,8 @@ function App() {
             {/* ================= ORBITAL OBJECT ================= */}
 
             <div
-              className={`orbital-system ${
-                loading ? "is-loading" : ""
-              }`}
+              className={`orbital-system ${loading ? "is-loading" : ""
+                }`}
             >
               <div className="orbit orbit-large"></div>
               <div className="orbit orbit-medium"></div>
@@ -261,9 +370,8 @@ function App() {
                     return (
                       <React.Fragment key={stage.number}>
                         <div
-                          className={`agent-stage ${
-                            isActive ? "active" : ""
-                          } ${isDone ? "done" : ""}`}
+                          className={`agent-stage ${isActive ? "active" : ""
+                            } ${isDone ? "done" : ""}`}
                         >
                           <div className="stage-number">
                             {isDone ? "✓" : stage.number}
@@ -276,8 +384,8 @@ function App() {
                               {isActive
                                 ? stage.description
                                 : isDone
-                                ? "Complete"
-                                : "Waiting"}
+                                  ? "Complete"
+                                  : "Waiting"}
                             </small>
                           </div>
 
@@ -288,11 +396,10 @@ function App() {
 
                         {index < stages.length - 1 && (
                           <div
-                            className={`pipeline-connector ${
-                              index < activeStage
+                            className={`pipeline-connector ${index < activeStage
                                 ? "complete"
                                 : ""
-                            }`}
+                              }`}
                           ></div>
                         )}
                       </React.Fragment>
