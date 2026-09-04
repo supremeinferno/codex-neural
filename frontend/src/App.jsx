@@ -264,7 +264,7 @@ function App() {
           }`}
           onClick={() => setActiveTab("nexus")}
         >
-          NEXUS
+          Codex
         </button>
 
         <button
@@ -674,7 +674,7 @@ function App() {
 
       <footer>
         <div className="footer-brand">
-          NEXUS<span>.</span>
+          CODEX<span>.</span>
         </div>
 
         <div className="footer-middle">
