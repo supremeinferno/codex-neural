@@ -2,3 +2,21 @@
 .venv/
 __pycache__/
 node_modules/
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment variables
+.env
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Build files
+dist/
+build/
