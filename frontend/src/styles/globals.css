@@ -1,0 +1,177 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap");
+
+:root {
+  --black: #070707;
+  --black-soft: #0b0b0b;
+  --white: #f4f2ed;
+  --muted: #85827b;
+  --muted-light: #aaa69d;
+
+  --gold: #c59a4a;
+  --gold-light: #e0b765;
+  --gold-dark: #705525;
+
+  --line: rgba(255, 255, 255, 0.09);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--black);
+  color: var(--white);
+  font-family: "DM Sans", sans-serif;
+}
+
+button,
+textarea,
+input {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* ============================================================
+   RESEARCH REPORT TYPOGRAPHY
+   ============================================================ */
+
+.research-report {
+  font-family: "DM Sans", sans-serif;
+  color: var(--white);
+}
+
+/* Main report title */
+.research-report h1 {
+  font-family: "Manrope", sans-serif;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--white);
+  margin-top: 0;
+  margin-bottom: 32px;
+}
+
+/* Main sections:
+   1. Introduction
+   2. Key Findings
+   3. Conclusion
+*/
+.research-report h2 {
+  font-family: "Manrope", sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--white);
+  margin-top: 48px;
+  margin-bottom: 18px;
+}
+
+/* Finding subheadings */
+.research-report h3 {
+  font-family: "Manrope", sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--white);
+  margin-top: 28px;
+  margin-bottom: 12px;
+}
+
+/* Paragraphs */
+.research-report p {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.8;
+  color: var(--muted-light);
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+
+/* Lists */
+.research-report ul,
+.research-report ol {
+  padding-left: 24px;
+  margin-top: 12px;
+  margin-bottom: 24px;
+}
+
+.research-report li {
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--muted-light);
+  margin-bottom: 10px;
+}
+
+/* Links / Sources */
+.research-report a {
+  color: var(--gold-light);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.research-report a:hover {
+  color: var(--gold);
+}
+
+/* Horizontal separators */
+.research-report hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 42px 0;
+}
+
+/* Blockquotes */
+.research-report blockquote {
+  margin: 24px 0;
+  padding: 16px 20px;
+  border-left: 2px solid var(--gold);
+  color: var(--muted-light);
+  background: rgba(197, 154, 74, 0.03);
+}
+
+/* Strong text */
+.research-report strong {
+  color: var(--white);
+  font-weight: 600;
+}
+
+/* Code */
+.research-report code {
+  font-family: monospace;
+  color: var(--gold-light);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .research-report h1 {
+    font-size: 28px;
+    margin-bottom: 26px;
+  }
+
+  .research-report h2 {
+    font-size: 22px;
+    margin-top: 38px;
+    margin-bottom: 16px;
+  }
+
+  .research-report h3 {
+    font-size: 18px;
+  }
+
+  .research-report p,
+  .research-report li {
+    font-size: 15px;
+    line-height: 1.7;
+  }
+}

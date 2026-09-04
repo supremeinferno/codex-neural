@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { API_URL } from "./config";
+import Atmosphere from "./Atmosphere";
 
 function Login({ onLogin, onCreateAccount }) {
   const [email, setEmail] = useState("");
@@ -63,8 +64,8 @@ function Login({ onLogin, onCreateAccount }) {
 
   return (
     <div className="login-page">
-      <div className="login-glow login-glow-one"></div>
-      <div className="login-glow login-glow-two"></div>
+
+      <Atmosphere />
 
       <div className="login-card">
         <div className="login-brand">CODEX.</div>

@@ -1,0 +1,472 @@
+/* =========================================================
+   MODE TABS
+   ========================================================= */
+
+.mode-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  width: fit-content;
+
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.mode-tab {
+  border: 0;
+  outline: none;
+  cursor: pointer;
+
+  padding: 9px 16px;
+  border-radius: 7px;
+
+  background: transparent;
+  color: #777;
+
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+
+  transition:
+    color 0.25s ease,
+    background 0.25s ease,
+    transform 0.25s ease;
+}
+
+.mode-tab:hover {
+  color: #d4a44d;
+}
+
+.mode-tab.active {
+  color: #111;
+  background: #d4a44d;
+}
+
+
+/* =========================================================
+   INDIVIDUAL PAGE
+   ========================================================= */
+
+.individual-page {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+
+  padding: 110px 5vw 60px;
+
+  background: transparent;
+  color: #ece8e1;
+
+  overflow-x: hidden;
+}
+
+
+/* =========================================================
+   HEADER
+   ========================================================= */
+
+.individual-header {
+  width: min(1200px, 100%);
+  margin: 0 auto 45px;
+}
+
+.individual-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  margin-bottom: 14px;
+
+  color: #d4a44d;
+
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.individual-eyebrow::before {
+  content: "";
+
+  width: 5px;
+  height: 5px;
+
+  border-radius: 50%;
+  background: #d4a44d;
+
+  box-shadow: 0 0 12px rgba(212, 164, 77, 0.7);
+}
+
+
+/* =========================================================
+   UPLOAD CARD
+   ========================================================= */
+
+.individual-upload-card {
+  position: relative;
+
+  width: min(1200px, 100%);
+  min-height: 230px;
+
+  margin: 0 auto;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  padding: 45px;
+
+  border: 1px solid rgba(212, 164, 77, 0.18);
+  border-radius: 18px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.035),
+      rgba(255, 255, 255, 0.012)
+    );
+
+  box-shadow:
+    0 25px 80px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.025);
+
+  transition:
+    border-color 0.3s ease,
+    transform 0.3s ease,
+    background 0.3s ease;
+}
+
+.individual-upload-card:hover {
+  border-color: rgba(212, 164, 77, 0.35);
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(212, 164, 77, 0.045),
+      rgba(255, 255, 255, 0.015)
+    );
+}
+
+.individual-upload-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 58px;
+  height: 58px;
+
+  margin-bottom: 18px;
+
+  border: 1px solid rgba(212, 164, 77, 0.25);
+  border-radius: 14px;
+
+  color: #d4a44d;
+  background: rgba(212, 164, 77, 0.06);
+
+  font-size: 22px;
+}
+
+.individual-file-button {
+  margin-top: 18px;
+
+  padding: 11px 20px;
+
+  border: 1px solid rgba(212, 164, 77, 0.3);
+  border-radius: 8px;
+
+  background: transparent;
+  color: #d4a44d;
+
+  cursor: pointer;
+
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+
+  transition: all 0.25s ease;
+}
+
+.individual-file-button:hover {
+  background: #d4a44d;
+  color: #111;
+
+  transform: translateY(-1px);
+}
+
+.individual-file-name {
+  margin-top: 14px;
+
+  color: #999;
+
+  font-size: 12px;
+  text-align: center;
+}
+
+.individual-analyze-button {
+  width: min(320px, 100%);
+
+  margin: 25px auto 0;
+
+  padding: 14px 24px;
+
+  border: 0;
+  border-radius: 9px;
+
+  background: #d4a44d;
+  color: #111;
+
+  cursor: pointer;
+
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    opacity 0.25s ease;
+}
+
+.individual-analyze-button:hover {
+  transform: translateY(-2px);
+
+  box-shadow:
+    0 10px 30px rgba(212, 164, 77, 0.2);
+}
+
+.individual-analyze-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+
+/* =========================================================
+   ERROR / RESULT
+   ========================================================= */
+
+.individual-error {
+  width: min(1200px, 100%);
+
+  margin: 22px auto 0;
+  padding: 14px 18px;
+
+  border: 1px solid rgba(255, 90, 90, 0.2);
+  border-radius: 9px;
+
+  background: rgba(255, 70, 70, 0.05);
+  color: #ff8c8c;
+
+  font-size: 12px;
+}
+
+.individual-result-card {
+  width: min(1200px, 100%);
+
+  margin: 30px auto 0;
+  padding: 28px;
+
+  border: 1px solid rgba(212, 164, 77, 0.15);
+  border-radius: 16px;
+
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.individual-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+
+  margin-top: 22px;
+}
+
+.individual-stats > * {
+  padding: 18px;
+
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+
+  background: rgba(255, 255, 255, 0.02);
+}
+
+
+/* =========================================================
+   CHAT CARD
+   ========================================================= */
+
+.individual-chat-card {
+  width: min(1200px, 100%);
+
+  margin: 35px auto 0;
+
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+
+  background: rgba(255, 255, 255, 0.018);
+
+  overflow: hidden;
+}
+
+.individual-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 18px 22px;
+
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.individual-chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  min-height: 260px;
+  max-height: 520px;
+
+  padding: 22px;
+
+  overflow-y: auto;
+}
+
+.individual-message {
+  max-width: 78%;
+
+  padding: 12px 15px;
+
+  border-radius: 10px;
+
+  color: #d5d5d5;
+
+  background: rgba(255, 255, 255, 0.035);
+
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.individual-chat-empty {
+  min-height: 260px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  color: #555;
+
+  font-size: 12px;
+}
+
+.individual-chat-input-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  padding: 15px 18px;
+
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+
+/* =========================================================
+   WORKSPACE
+   ========================================================= */
+
+.individual-workspace {
+  width: min(1400px, 100%);
+  margin: 0 auto;
+}
+
+.individual-sidebar {
+  position: relative;
+
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.individual-chat-workspace {
+  width: 100%;
+}
+
+
+/* =========================================================
+   SCROLLBAR
+   ========================================================= */
+
+.individual-chat-messages::-webkit-scrollbar {
+  width: 5px;
+}
+
+.individual-chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.individual-chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(212, 164, 77, 0.25);
+  border-radius: 10px;
+}
+
+.individual-chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 164, 77, 0.45);
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 900px) {
+  .individual-page {
+    padding: 90px 24px 45px;
+  }
+
+  .individual-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .individual-upload-card {
+    min-height: 210px;
+    padding: 35px 25px;
+  }
+}
+
+
+@media (max-width: 600px) {
+  .individual-page {
+    padding: 80px 16px 35px;
+  }
+
+  .mode-tabs {
+    width: 100%;
+  }
+
+  .mode-tab {
+    flex: 1;
+    padding: 9px 10px;
+  }
+
+  .individual-upload-card {
+    border-radius: 14px;
+    padding: 30px 18px;
+  }
+
+  .individual-message {
+    max-width: 90%;
+  }
+
+  .individual-chat-header {
+    padding: 15px;
+  }
+
+  .individual-chat-messages {
+    padding: 15px;
+  }
+}

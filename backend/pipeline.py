@@ -25,7 +25,7 @@ def run_research_pipeline(topic: str) -> dict:
     search_agent = build_search_agent()
 
     # Small delay before the Mistral request
-    time.sleep(10)
+    time.sleep(20)
 
     search_result = search_agent.invoke({
         "messages": [
@@ -94,7 +94,7 @@ def run_research_pipeline(topic: str) -> dict:
     )
 
     # Delay before Writer's Mistral request
-    time.sleep(10)
+    time.sleep(20)
 
     state["report"] = writer_chain.invoke({
         "topic": topic,

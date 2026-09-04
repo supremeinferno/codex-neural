@@ -1,0 +1,416 @@
+/* =========================================
+   AUTH — LOGIN + REGISTER
+========================================= */
+
+.login-page {
+  min-height: 100vh;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background:
+    radial-gradient(
+      circle at 50% 45%,
+      rgba(190, 140, 50, 0.08),
+      transparent 32%
+    ),
+    #070707;
+}
+
+
+/* =========================================
+   AUTH CARD
+========================================= */
+
+.login-card {
+  width: min(430px, 90%);
+  padding: 48px 42px;
+
+  position: relative;
+  z-index: 2;
+
+  border: 1px solid rgba(196, 155, 76, 0.28);
+  border-radius: 18px;
+
+  background: rgba(255, 255, 255, 0.025);
+
+  box-shadow:
+    0 30px 100px rgba(0, 0, 0, 0.55),
+    0 0 50px rgba(180, 130, 50, 0.05);
+
+  backdrop-filter: blur(12px);
+
+  animation: fade-up 0.7s ease;
+}
+
+
+/* =========================================
+   REGISTER CARD
+========================================= */
+
+.register-card {
+  width: min(510px, calc(100% - 40px));
+  padding: 40px 44px 32px;
+}
+
+
+/* =========================================
+   BRAND
+========================================= */
+
+.login-brand {
+  margin-bottom: 38px;
+
+  font-family: "Manrope", sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+
+  color: var(--white);
+}
+
+
+/* =========================================
+   EYEBROW
+========================================= */
+
+.login-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  margin-bottom: 16px;
+
+  color: var(--gold-light);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.login-eyebrow span {
+  width: 5px;
+  height: 5px;
+
+  border-radius: 50%;
+
+  background: var(--gold-light);
+
+  box-shadow:
+    0 0 12px rgba(224, 183, 101, 0.7);
+}
+
+
+/* =========================================
+   HEADING
+========================================= */
+
+.login-card h1 {
+  margin: 0;
+
+  font-family: "Manrope", sans-serif;
+  font-size: 48px;
+  line-height: 0.95;
+  letter-spacing: -0.065em;
+  font-weight: 800;
+
+  color: var(--white);
+}
+
+.login-card h1 span {
+  color: #777570;
+}
+
+
+/* =========================================
+   SUBTITLE
+========================================= */
+
+.login-subtitle {
+  margin: 20px 0 34px;
+
+  color: #77736c;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+
+/* =========================================
+   FORM FIELD
+========================================= */
+
+.login-field {
+  margin-bottom: 20px;
+}
+
+.login-field label {
+  display: block;
+
+  margin-bottom: 8px;
+
+  color: #aaa69d;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.login-field input {
+  width: 100%;
+  height: 48px;
+
+  padding: 0 14px;
+
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9px;
+
+  outline: none;
+
+  background: rgba(255, 255, 255, 0.025);
+
+  color: var(--white);
+  font-family: inherit;
+  font-size: 13px;
+
+  transition: 0.25s ease;
+}
+
+.login-field input::placeholder {
+  color: #55534f;
+}
+
+.login-field input:focus {
+  border-color: var(--gold);
+
+  background: rgba(255, 255, 255, 0.035);
+
+  box-shadow:
+    0 0 0 1px rgba(224, 183, 101, 0.08),
+    0 0 25px rgba(180, 130, 50, 0.06);
+}
+
+.login-field input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+
+/* =========================================
+   ERROR / SUCCESS
+========================================= */
+
+.login-error {
+  margin: -5px 0 16px;
+
+  color: #d48b7d;
+  font-size: 11px;
+}
+
+.login-success {
+  margin: -5px 0 16px;
+
+  color: #8be0a3;
+  font-size: 11px;
+}
+
+
+/* =========================================
+   PRIMARY BUTTON
+========================================= */
+
+.login-button {
+  width: 100%;
+  height: 48px;
+
+  margin-top: 8px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  border: 0;
+  border-radius: 9px;
+
+  background: var(--gold);
+  color: #15120d;
+
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+
+  transition: 0.25s ease;
+}
+
+.login-button:hover:not(:disabled) {
+  background: var(--gold-light);
+
+  transform: translateY(-2px);
+
+  box-shadow:
+    0 10px 30px rgba(190, 145, 62, 0.2);
+}
+
+.login-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.login-button span {
+  font-size: 14px;
+}
+
+
+/* =========================================
+   CREATE ACCOUNT
+========================================= */
+
+.login-create {
+  margin-top: 22px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  color: #55534f;
+  font-size: 10px;
+}
+
+.login-create-button {
+  padding: 0;
+
+  border: 0;
+  background: transparent;
+
+  color: var(--gold-light);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+
+  cursor: pointer;
+}
+
+.login-create-button:hover {
+  color: var(--white);
+}
+
+
+/* =========================================
+   BACK TO LOGIN
+========================================= */
+
+.login-back-button {
+  width: 100%;
+
+  margin-top: 14px;
+  padding: 10px;
+
+  border: 0;
+  background: transparent;
+
+  color: #77736c;
+
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+
+  cursor: pointer;
+
+  transition: 0.2s ease;
+}
+
+.login-back-button:hover {
+  color: var(--gold-light);
+}
+
+.login-back-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
+/* =========================================
+   FOOTER
+========================================= */
+
+.login-footer {
+  margin-top: 30px;
+
+  text-align: center;
+
+  color: #45423e;
+  font-size: 8px;
+  letter-spacing: 0.15em;
+}
+
+
+/* =========================================
+   SMALL AUTH GLOWS
+========================================= */
+
+.login-glow {
+  position: absolute;
+
+  border-radius: 50%;
+
+  filter: blur(100px);
+
+  pointer-events: none;
+
+  z-index: 0;
+}
+
+.login-glow-one {
+  width: 420px;
+  height: 420px;
+
+  top: -180px;
+  left: -120px;
+
+  background: rgba(178, 135, 63, 0.08);
+}
+
+.login-glow-two {
+  width: 350px;
+  height: 350px;
+
+  right: -100px;
+  bottom: -150px;
+
+  background: rgba(109, 84, 40, 0.08);
+}
+
+
+/* =========================================
+   AUTH RESPONSIVE
+========================================= */
+
+@media (max-width: 600px) {
+  .login-card {
+    width: calc(100% - 32px);
+    padding: 38px 25px;
+  }
+
+  .register-card {
+    width: calc(100% - 32px);
+    padding: 36px 25px 28px;
+  }
+
+  .login-card h1 {
+    font-size: 42px;
+  }
+
+  .login-brand {
+    margin-bottom: 30px;
+  }
+
+  .login-subtitle {
+    margin-bottom: 28px;
+  }
+}

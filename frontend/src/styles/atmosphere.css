@@ -1,0 +1,376 @@
+/* =========================================================
+   CODEX — AMBIENT ATMOSPHERE
+   Soft / cinematic / intelligent background
+   ========================================================= */
+
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      circle at 50% 48%,
+      rgba(212, 164, 77, 0.10) 0%,
+      rgba(212, 164, 77, 0.045) 18%,
+      transparent 48%
+    ),
+    radial-gradient(
+      circle at 15% 70%,
+      rgba(212, 164, 77, 0.045) 0%,
+      transparent 35%
+    ),
+    radial-gradient(
+      circle at 85% 25%,
+      rgba(255, 255, 255, 0.025) 0%,
+      transparent 30%
+    ),
+    #080808;
+}
+
+
+/* =========================================================
+   MAIN AMBIENT GLOW
+   ========================================================= */
+
+.atmo-glow {
+  position: absolute;
+  width: 620px;
+  height: 620px;
+
+  left: 50%;
+  top: 50%;
+
+  transform: translate(-50%, -50%);
+
+  border-radius: 50%;
+
+  background: radial-gradient(
+    circle,
+    rgba(212, 164, 77, 0.10) 0%,
+    rgba(212, 164, 77, 0.035) 28%,
+    transparent 68%
+  );
+
+  filter: blur(25px);
+
+  animation: ambientPulse 8s ease-in-out infinite;
+}
+
+
+/* =========================================================
+   VERY SOFT MOVING LIGHT
+   ========================================================= */
+
+.atmo-grid {
+  position: absolute;
+  inset: -20%;
+
+  background:
+    linear-gradient(
+      115deg,
+      transparent 35%,
+      rgba(212, 164, 77, 0.018) 50%,
+      transparent 65%
+    );
+
+  filter: blur(35px);
+
+  animation: lightSweep 14s ease-in-out infinite;
+}
+
+
+/* =========================================================
+   PARTICLE FIELD
+   ========================================================= */
+
+.particle-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+
+  width: 2px;
+  height: 2px;
+
+  border-radius: 50%;
+
+  background: rgba(212, 164, 77, 0.45);
+
+  box-shadow:
+    0 0 8px rgba(212, 164, 77, 0.25);
+
+  animation: particleFloat 9s ease-in-out infinite;
+}
+
+
+/* =========================================================
+   ORBIT ELEMENTS
+   Hidden intentionally — no fixed circles/rings
+   ========================================================= */
+
+.orbit-1,
+.orbit-2,
+.orbit-3 {
+  display: none;
+}
+
+
+/* =========================================================
+   ENERGY CORE
+   ========================================================= */
+
+.energy-core {
+  position: absolute;
+
+  left: 50%;
+  top: 50%;
+
+  width: 8px;
+  height: 8px;
+
+  transform: translate(-50%, -50%);
+
+  border-radius: 50%;
+
+  background: rgba(212, 164, 77, 0.65);
+
+  box-shadow:
+    0 0 18px rgba(212, 164, 77, 0.35),
+    0 0 50px rgba(212, 164, 77, 0.12);
+
+  opacity: 0.45;
+
+  animation: corePulse 5s ease-in-out infinite;
+}
+
+
+/* =========================================================
+   ANIMATIONS
+   ========================================================= */
+
+@keyframes ambientPulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(0.92);
+    opacity: 0.65;
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(1.08);
+    opacity: 1;
+  }
+}
+
+
+@keyframes lightSweep {
+  0% {
+    transform: translateX(-12%) translateY(4%);
+    opacity: 0.25;
+  }
+
+  50% {
+    transform: translateX(8%) translateY(-3%);
+    opacity: 0.55;
+  }
+
+  100% {
+    transform: translateX(-12%) translateY(4%);
+    opacity: 0.25;
+  }
+}
+
+
+@keyframes particleFloat {
+  0% {
+    transform: translate3d(0, 20px, 0);
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 0.5;
+  }
+
+  50% {
+    transform: translate3d(12px, -25px, 0);
+    opacity: 0.7;
+  }
+
+  80% {
+    opacity: 0.25;
+  }
+
+  100% {
+    transform: translate3d(-8px, -55px, 0);
+    opacity: 0;
+  }
+}
+
+
+@keyframes corePulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(0.7);
+    opacity: 0.25;
+  }
+
+  50% {
+    transform: translate(-50%, -50%) scale(1.35);
+    opacity: 0.65;
+  }
+}
+
+
+/* =========================================================
+   REDUCED MOTION
+   ========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .atmo-glow,
+  .atmo-grid,
+  .particle,
+  .energy-core {
+    animation: none;
+  }
+}
+
+/* =========================================================
+   SHOOTING STARS
+   ========================================================= */
+
+.shooting-stars {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.shooting-star {
+  position: absolute;
+  width: 150px;
+  height: 1px;
+
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 20%,
+    rgba(255, 255, 255, 0.45) 65%,
+    rgba(255, 255, 255, 0.95) 100%
+  );
+
+  border-radius: 999px;
+
+  opacity: 0;
+
+  transform-origin: right center;
+
+  filter:
+    drop-shadow(0 0 3px rgba(255, 255, 255, 0.5))
+    drop-shadow(0 0 8px rgba(212, 164, 77, 0.25));
+
+  animation: shootingStar 6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+
+/* -------------------------
+   STAR 1
+   ------------------------- */
+
+.shooting-star:nth-child(1) {
+  top: 17%;
+  left: 4%;
+  animation-delay: 0.8s;
+}
+
+
+/* -------------------------
+   STAR 2
+   ------------------------- */
+
+.shooting-star:nth-child(2) {
+  top: 27%;
+  left: 61%;
+  width: 110px;
+  animation-delay: 3.2s;
+}
+
+
+/* -------------------------
+   STAR 3
+   ------------------------- */
+
+.shooting-star:nth-child(3) {
+  top: 52%;
+  left: 15%;
+  width: 90px;
+  animation-delay: 5.1s;
+}
+
+
+/* -------------------------
+   STAR 4
+   ------------------------- */
+
+.shooting-star:nth-child(4) {
+  top: 11%;
+  left: 78%;
+  width: 75px;
+  animation-delay: 7.5s;
+}
+
+
+/* =========================================================
+   SHOOTING STAR MOTION
+   ========================================================= */
+
+@keyframes shootingStar {
+
+  0% {
+    opacity: 0;
+    transform:
+      translate3d(0, 0, 0)
+      rotate(-35deg)
+      scaleX(0.15);
+  }
+
+  4% {
+    opacity: 0;
+  }
+
+  8% {
+    opacity: 0.9;
+    transform:
+      translate3d(35px, 24px, 0)
+      rotate(-35deg)
+      scaleX(0.65);
+  }
+
+  18% {
+    opacity: 1;
+    transform:
+      translate3d(180px, 125px, 0)
+      rotate(-35deg)
+      scaleX(1);
+  }
+
+  25% {
+    opacity: 0;
+    transform:
+      translate3d(320px, 220px, 0)
+      rotate(-35deg)
+      scaleX(1.15);
+  }
+
+  100% {
+    opacity: 0;
+    transform:
+      translate3d(320px, 220px, 0)
+      rotate(-35deg)
+      scaleX(1.15);
+  }
+}
