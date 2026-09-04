@@ -3,12 +3,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from backend.pipeline import run_research_pipeline
-from backend.auth import register_user, authenticate_user
+
+from backend.auth import (
+    register_user,
+    authenticate_user,
+    request_password_reset,
+    verify_otp,
+    reset_password
+)
+
 from backend.individual import (
     build_individual_index,
     answer_individual_question
 )
 
+
+# =========================================================
+# FASTAPI APP
+# =========================================================
 
 app = FastAPI(
     title="Nexus Research API",
@@ -17,9 +29,9 @@ app = FastAPI(
 )
 
 
-# =========================
+# =========================================================
 # CORS
-# =========================
+# =========================================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,9 +42,9 @@ app.add_middleware(
 )
 
 
-# =========================
+# =========================================================
 # REQUEST MODELS
-# =========================
+# =========================================================
 
 class ResearchRequest(BaseModel):
     topic: str
@@ -43,14 +55,29 @@ class AuthRequest(BaseModel):
     password: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class VerifyOTPRequest(BaseModel):
+    email: str
+    otp: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp: str
+    new_password: str
+
+
 class IndividualQuestionRequest(BaseModel):
     question: str
     document_id: str
 
 
-# =========================
+# =========================================================
 # GENERAL API
-# =========================
+# =========================================================
 
 @app.get("/api")
 def home():
@@ -59,12 +86,13 @@ def home():
     }
 
 
-# =========================
+# =========================================================
 # AUTHENTICATION
-# =========================
+# =========================================================
 
 @app.post("/api/register")
 def register(request: AuthRequest):
+
     success, message = register_user(
         request.email,
         request.password
@@ -78,6 +106,7 @@ def register(request: AuthRequest):
 
 @app.post("/api/login")
 def login(request: AuthRequest):
+
     user = authenticate_user(
         request.email,
         request.password
@@ -96,24 +125,81 @@ def login(request: AuthRequest):
     }
 
 
-# =========================
+# =========================================================
+# FORGOT PASSWORD
+# =========================================================
+
+@app.post("/api/forgot-password")
+def forgot_password(request: ForgotPasswordRequest):
+
+    success, message = request_password_reset(
+        request.email
+    )
+
+    return {
+        "success": success,
+        "message": message
+    }
+
+
+@app.post("/api/verify-otp")
+def verify_otp_endpoint(request: VerifyOTPRequest):
+
+    success, message = verify_otp(
+        request.email,
+        request.otp
+    )
+
+    return {
+        "success": success,
+        "message": message
+    }
+
+
+@app.post("/api/reset-password")
+def reset_password_endpoint(
+    request: ResetPasswordRequest
+):
+
+    success, message = reset_password(
+        request.email,
+        request.otp,
+        request.new_password
+    )
+
+    return {
+        "success": success,
+        "message": message
+    }
+
+
+# =========================================================
 # NEXUS RESEARCH
-# =========================
+# =========================================================
 
 @app.post("/api/research")
 def research(request: ResearchRequest):
-    result = run_research_pipeline(request.topic)
+
+    result = run_research_pipeline(
+        request.topic
+    )
+
     return result
 
 
-# =========================
+# =========================================================
 # INDIVIDUAL PDF ANALYZER
-# =========================
+# =========================================================
 
 @app.post("/api/individual/upload")
-async def upload_individual_pdf(file: UploadFile = File(...)):
+async def upload_individual_pdf(
+    file: UploadFile = File(...)
+):
 
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
+    if (
+        not file.filename
+        or not file.filename.lower().endswith(".pdf")
+    ):
         return {
             "success": False,
             "message": "Only PDF files are allowed."
@@ -129,12 +215,14 @@ async def upload_individual_pdf(file: UploadFile = File(...)):
     return result
 
 
-# =========================
+# =========================================================
 # INDIVIDUAL PDF CHAT
-# =========================
+# =========================================================
 
 @app.post("/api/individual/chat")
-def individual_chat(request: IndividualQuestionRequest):
+def individual_chat(
+    request: IndividualQuestionRequest
+):
 
     if not request.question.strip():
         return {
