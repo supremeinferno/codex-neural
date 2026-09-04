@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from pipeline import run_research_pipeline
+from backend.pipeline import run_research_pipeline
 
 
 app = FastAPI(

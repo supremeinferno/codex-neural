@@ -3,7 +3,7 @@ from langchain_mistralai import ChatMistralAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from tools import tavily_search, scrape_webpage
+from backend.tools import tavily_search, scrape_webpage
 
 from dotenv import load_dotenv
 
