@@ -6,8 +6,7 @@ import "./index.css";
 import Login from "./login.jsx";
 import Register from "./register.jsx";
 import Individual from "./Individual.jsx";
-
-const API_URL = "http://127.0.0.1:8000";
+import { API_URL } from "./config";
 
 function App() {
   // ================= AUTH =================

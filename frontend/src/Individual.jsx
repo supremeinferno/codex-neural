@@ -1,8 +1,7 @@
 import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-const API_URL = "http://127.0.0.1:8000";
+import { API_URL } from "./config";
 
 function Individual() {
     const [file, setFile] = useState(null);
