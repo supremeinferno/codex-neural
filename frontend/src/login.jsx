@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { API_URL } from "./config";
 import Atmosphere from "./Atmosphere";
 
-function Login({ onLogin, onCreateAccount }) {
+function Login({ onLogin, onCreateAccount, onForgotPassword }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -65,10 +65,31 @@ function Login({ onLogin, onCreateAccount }) {
   return (
     <div className="login-page">
 
+      {/* Background */}
+      <div className="star-field">
+        <span className="star star-1"></span>
+        <span className="star star-2"></span>
+        <span className="star star-3"></span>
+        <span className="star star-4"></span>
+        <span className="star star-5"></span>
+        <span className="star star-6"></span>
+      </div>
+
+      <div className="login-glow login-glow-1"></div>
+      <div className="login-glow login-glow-2"></div>
+
       <Atmosphere />
 
       <div className="login-card">
-        <div className="login-brand">CODEX.</div>
+
+        <div className="login-top">
+          <div className="login-brand">CODEX.</div>
+
+          <div className="login-status">
+            <span></span>
+            SECURE ACCESS
+          </div>
+        </div>
 
         <div className="login-eyebrow">
           <span></span>
@@ -86,6 +107,7 @@ function Login({ onLogin, onCreateAccount }) {
         </p>
 
         <form onSubmit={handleSubmit}>
+
           <div className="login-field">
             <label>Email</label>
 
@@ -99,7 +121,18 @@ function Login({ onLogin, onCreateAccount }) {
           </div>
 
           <div className="login-field">
-            <label>Password</label>
+            <div className="login-label-row">
+              <label>Password</label>
+
+              <button
+                type="button"
+                className="forgot-button"
+                onClick={onForgotPassword}
+                disabled={loading}
+              >
+                Forgot password?
+              </button>
+            </div>
 
             <input
               type="password"
@@ -110,16 +143,25 @@ function Login({ onLogin, onCreateAccount }) {
             />
           </div>
 
-          {error && <div className="login-error">{error}</div>}
+          {error && (
+            <div className="login-error">
+              <span>!</span>
+              {error}
+            </div>
+          )}
 
           <button
             type="submit"
             className="login-button"
             disabled={loading}
           >
-            {loading ? "SIGNING IN..." : "SIGN IN"}
-            {!loading && <span>↗</span>}
+            <span>
+              {loading ? "SIGNING IN..." : "SIGN IN"}
+            </span>
+
+            {!loading && <span className="login-arrow">↗</span>}
           </button>
+
         </form>
 
         <div className="login-create">
@@ -136,8 +178,11 @@ function Login({ onLogin, onCreateAccount }) {
         </div>
 
         <div className="login-footer">
-          SECURE ACCESS · CODEX INTELLIGENCE
+          <span>CODEX INTELLIGENCE</span>
+          <span>•</span>
+          <span>RESEARCH WORKSPACE</span>
         </div>
+
       </div>
     </div>
   );

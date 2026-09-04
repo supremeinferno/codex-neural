@@ -1,15 +1,31 @@
 import React, { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
 import "./index.css";
 
+import ForgotPassword from "./Forgotpassword.jsx";
 import Login from "./login.jsx";
 import Register from "./register.jsx";
 import Individual from "./Individual.jsx";
+
 import { API_URL } from "./config";
 
+// =========================================================
+// ADMIN CONFIGURATION
+// =========================================================
+
+const ADMIN_EMAIL = "codexproject9@gmail.com";
+
+
+// =========================================================
+// APP
+// =========================================================
+
 function App() {
-  // ================= AUTH =================
+  // =======================================================
+  // AUTH
+  // =======================================================
 
   const [authPage, setAuthPage] = useState("login");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -19,19 +35,40 @@ function App() {
     setUser(loggedInUser);
     setIsLoggedIn(true);
     setAuthPage("login");
+    setActiveTab("nexus");
   };
 
   const handleLogout = () => {
     setUser(null);
     setIsLoggedIn(false);
     setAuthPage("login");
+    setActiveTab("nexus");
   };
 
-  // ================= MAIN TABS =================
+  // =======================================================
+  // ADMIN
+  // =======================================================
+
+  const isAdmin =
+    user?.email?.trim().toLowerCase() ===
+    ADMIN_EMAIL.trim().toLowerCase();
+
+  // =======================================================
+  // MAIN TABS
+  // =======================================================
 
   const [activeTab, setActiveTab] = useState("nexus");
 
-  // ================= NEXUS RESEARCH =================
+  // Never allow a non-admin to stay on the dashboard.
+  useEffect(() => {
+    if (activeTab === "dashboard" && !isAdmin) {
+      setActiveTab("nexus");
+    }
+  }, [activeTab, isAdmin]);
+
+  // =======================================================
+  // NEXUS RESEARCH
+  // =======================================================
 
   const [topic, setTopic] = useState("");
   const [report, setReport] = useState("");
@@ -62,7 +99,9 @@ function App() {
     },
   ];
 
-  // ---------------- RESEARCH PROGRESS ---------------- //
+  // =======================================================
+  // RESEARCH PROGRESS
+  // =======================================================
 
   useEffect(() => {
     if (!loading) return;
@@ -78,7 +117,9 @@ function App() {
     return () => clearInterval(interval);
   }, [loading]);
 
-  // ---------------- RUN RESEARCH ---------------- //
+  // =======================================================
+  // RUN RESEARCH
+  // =======================================================
 
   const runResearch = async () => {
     if (!topic.trim() || loading) return;
@@ -106,24 +147,26 @@ function App() {
       const data = await response.json();
 
       if (!data.report) {
-        throw new Error("Backend returned an empty research report.");
+        throw new Error(
+          "Backend returned an empty research report."
+        );
       }
 
       setReport(data.report);
       setActiveStage(stages.length - 1);
-    } catch (error) {
-      console.error("Research error:", error);
+    } catch (err) {
+      console.error("Research error:", err);
 
       if (
-        error instanceof TypeError &&
-        error.message === "Failed to fetch"
+        err instanceof TypeError &&
+        err.message === "Failed to fetch"
       ) {
         setError(
           "Backend server is not connected. Please start the FastAPI server and try again."
         );
       } else {
         setError(
-          error.message || "Something went wrong. Please try again."
+          err.message || "Something went wrong. Please try again."
         );
       }
     } finally {
@@ -131,7 +174,9 @@ function App() {
     }
   };
 
-  // ---------------- KEYBOARD HANDLER ---------------- //
+  // =======================================================
+  // KEYBOARD HANDLER
+  // =======================================================
 
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -140,7 +185,9 @@ function App() {
     }
   };
 
-  // ---------------- RESET RESEARCH ---------------- //
+  // =======================================================
+  // RESET RESEARCH
+  // =======================================================
 
   const resetResearch = () => {
     setTopic("");
@@ -148,17 +195,26 @@ function App() {
     setError("");
     setLoading(false);
     setActiveStage(0);
+    setActiveTab("nexus");
   };
 
-  // ================= LOGIN / REGISTER =================
+  // =======================================================
+  // AUTH SCREEN
+  // =======================================================
 
   if (!isLoggedIn) {
     if (authPage === "register") {
       return (
         <Register
-          onBackToLogin={() => {
-            setAuthPage("login");
-          }}
+          onBackToLogin={() => setAuthPage("login")}
+        />
+      );
+    }
+
+    if (authPage === "forgot-password") {
+      return (
+        <ForgotPassword
+          onBack={() => setAuthPage("login")}
         />
       );
     }
@@ -166,66 +222,18 @@ function App() {
     return (
       <Login
         onLogin={handleLogin}
-        onCreateAccount={() => {
-          setAuthPage("register");
-        }}
+        onCreateAccount={() => setAuthPage("register")}
+        onForgotPassword={() => setAuthPage("forgot-password")}
       />
     );
   }
 
-  // ================= INDIVIDUAL TAB =================
+  // =======================================================
+  // SHARED BACKGROUND
+  // =======================================================
 
-  if (activeTab === "individual") {
-    return (
-      <div className="app">
-        <div className="ambient ambient-one"></div>
-        <div className="ambient ambient-two"></div>
-
-        <div className="stars">
-          {Array.from({ length: 28 }).map((_, index) => (
-            <span
-              key={index}
-              className={`star star-${index % 5}`}
-            ></span>
-          ))}
-        </div>
-
-        <nav className="navbar">
-          <div className="logo">CODEX.</div>
-
-          <div className="mode-tabs">
-            <button
-              className="mode-tab"
-              onClick={() => setActiveTab("individual")}
-            >
-              INDIVIDUAL
-            </button>
-
-            <button
-              className="mode-tab active"
-              onClick={() => setActiveTab("nexus")}
-            >
-              NEXUS
-            </button>
-          </div>
-
-          <div className="status">
-            <span className="status-dot"></span>
-            DOCUMENT ANALYZER ONLINE
-          </div>
-        </nav>
-
-        <Individual />
-      </div>
-    );
-  }
-
-  // ================= NEXUS INTERFACE =================
-
-  return (
-    <div className="app">
-      {/* ================= BACKGROUND ================= */}
-
+  const Background = () => (
+    <>
       <div className="ambient ambient-one"></div>
       <div className="ambient ambient-two"></div>
 
@@ -237,35 +245,120 @@ function App() {
           ></span>
         ))}
       </div>
+    </>
+  );
 
-      {/* ================= NAVBAR ================= */}
+  // =======================================================
+  // SHARED NAVBAR
+  // =======================================================
 
-      <nav className="navbar">
-        <div className="logo">NEXUS.</div>
+  const Navbar = () => (
+    <nav className="navbar">
+      <div className="logo">CODEX.</div>
 
-        <div className="mode-tabs">
+      <div className="mode-tabs">
+        <button
+          type="button"
+          className={`mode-tab ${
+            activeTab === "nexus" ? "active" : ""
+          }`}
+          onClick={() => setActiveTab("nexus")}
+        >
+          NEXUS
+        </button>
+
+        <button
+          type="button"
+          className={`mode-tab ${
+            activeTab === "individual" ? "active" : ""
+          }`}
+          onClick={() => setActiveTab("individual")}
+        >
+          INDIVIDUAL
+        </button>
+
+        {isAdmin && (
           <button
-            className="mode-tab"
-            onClick={() => setActiveTab("individual")}
+            type="button"
+            className={`mode-tab admin-tab ${
+              activeTab === "dashboard" ? "active" : ""
+            }`}
+            onClick={() => setActiveTab("dashboard")}
           >
-            INDIVIDUAL
+            DASHBOARD
           </button>
+        )}
+      </div>
 
-          <button
-            className="mode-tab active"
-            onClick={() => setActiveTab("nexus")}
-          >
-            NEXUS
-          </button>
-        </div>
+      <div className="status">
+        <span className="status-dot"></span>
+        RESEARCH ENGINE ONLINE
+      </div>
+    </nav>
+  );
 
-        <div className="status">
-          <span className="status-dot"></span>
-          RESEARCH ENGINE ONLINE
-        </div>
-      </nav>
+  // =======================================================
+  // INDIVIDUAL
+  // =======================================================
 
-      {/* ================= LANDING / LOADING ================= */}
+  if (activeTab === "individual") {
+    return (
+      <div className="app">
+        <Background />
+        <Navbar />
+
+        <Individual />
+      </div>
+    );
+  }
+
+  // =======================================================
+  // ADMIN DASHBOARD
+  // =======================================================
+
+  if (activeTab === "dashboard") {
+    if (!isAdmin) {
+      return null;
+    }
+
+    return (
+      <div className="app">
+        <Background />
+        <Navbar />
+
+        <main className="dashboard-placeholder">
+          <div className="eyebrow">
+            <span></span>
+            ADMIN CONSOLE
+          </div>
+
+          <h1>
+            Admin
+            <br />
+            <span>Dashboard.</span>
+          </h1>
+
+          <p>
+            Administrative analytics, users, research activity,
+            and system information will appear here.
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  // =======================================================
+  // NEXUS
+  // =======================================================
+
+  return (
+    <div className="app">
+      <Background />
+      <Navbar />
+
+      {/* ===================================================
+          LANDING / LOADING
+      =================================================== */}
 
       {!report && (
         <main className="main-stage">
@@ -282,15 +375,16 @@ function App() {
             </h1>
 
             <p className="subtitle">
-              Ask a question. Let intelligent agents search, read,
-              challenge, and synthesize the signal hidden inside the web.
+              Ask a question. Let intelligent agents search,
+              read, challenge, and synthesize the signal hidden
+              inside the web.
             </p>
 
-            {/* ================= ORBITAL OBJECT ================= */}
-
+            {/* ORBITAL OBJECT */}
             <div
-              className={`orbital-system ${loading ? "is-loading" : ""
-                }`}
+              className={`orbital-system ${
+                loading ? "is-loading" : ""
+              }`}
             >
               <div className="orbit orbit-large"></div>
               <div className="orbit orbit-medium"></div>
@@ -307,8 +401,7 @@ function App() {
               <div className="orbit-dot dot-three"></div>
             </div>
 
-            {/* ================= INPUT ================= */}
-
+            {/* INPUT */}
             {!loading && (
               <>
                 <div className="research-box">
@@ -323,6 +416,7 @@ function App() {
                   />
 
                   <button
+                    type="button"
                     onClick={runResearch}
                     disabled={!topic.trim()}
                   >
@@ -338,8 +432,7 @@ function App() {
               </>
             )}
 
-            {/* ================= LOADING STATE ================= */}
-
+            {/* LOADING */}
             {loading && (
               <section className="research-progress">
                 <div className="progress-header">
@@ -369,8 +462,9 @@ function App() {
                     return (
                       <React.Fragment key={stage.number}>
                         <div
-                          className={`agent-stage ${isActive ? "active" : ""
-                            } ${isDone ? "done" : ""}`}
+                          className={`agent-stage ${
+                            isActive ? "active" : ""
+                          } ${isDone ? "done" : ""}`}
                         >
                           <div className="stage-number">
                             {isDone ? "✓" : stage.number}
@@ -383,8 +477,8 @@ function App() {
                               {isActive
                                 ? stage.description
                                 : isDone
-                                  ? "Complete"
-                                  : "Waiting"}
+                                ? "Complete"
+                                : "Waiting"}
                             </small>
                           </div>
 
@@ -395,10 +489,11 @@ function App() {
 
                         {index < stages.length - 1 && (
                           <div
-                            className={`pipeline-connector ${index < activeStage
+                            className={`pipeline-connector ${
+                              index < activeStage
                                 ? "complete"
                                 : ""
-                              }`}
+                            }`}
                           ></div>
                         )}
                       </React.Fragment>
@@ -407,14 +502,13 @@ function App() {
                 </div>
 
                 <p className="progress-note">
-                  Nexus is gathering evidence before generating your
-                  report. This may take a moment.
+                  Nexus is gathering evidence before generating
+                  your report. This may take a moment.
                 </p>
               </section>
             )}
 
-            {/* ================= ERROR ================= */}
-
+            {/* ERROR */}
             {error && (
               <div className="error-box">
                 <strong>Something went wrong.</strong>
@@ -425,7 +519,9 @@ function App() {
         </main>
       )}
 
-      {/* ================= REPORT ================= */}
+      {/* ===================================================
+          REPORT
+      =================================================== */}
 
       {report && !loading && (
         <main className="report-page">
@@ -445,6 +541,7 @@ function App() {
             </div>
 
             <button
+              type="button"
               className="new-research"
               onClick={resetResearch}
             >
@@ -452,8 +549,6 @@ function App() {
               NEW RESEARCH
             </button>
           </section>
-
-          {/* ================= PIPELINE ================= */}
 
           <section className="report-pipeline">
             {stages.map((stage, index) => (
@@ -474,8 +569,6 @@ function App() {
             ))}
           </section>
 
-          {/* ================= REPORT CARD ================= */}
-
           <article className="report-card">
             <div className="report-card-top">
               <span>FINAL RESEARCH REPORT</span>
@@ -492,47 +585,37 @@ function App() {
                   h1: ({ children }) => (
                     <h1 className="md-h1">{children}</h1>
                   ),
-
                   h2: ({ children }) => (
                     <h2 className="md-h2">{children}</h2>
                   ),
-
                   h3: ({ children }) => (
                     <h3 className="md-h3">{children}</h3>
                   ),
-
                   p: ({ children }) => (
                     <p className="md-p">{children}</p>
                   ),
-
                   strong: ({ children }) => (
                     <strong className="md-strong">
                       {children}
                     </strong>
                   ),
-
                   ul: ({ children }) => (
                     <ul className="md-ul">{children}</ul>
                   ),
-
                   ol: ({ children }) => (
                     <ol className="md-ol">{children}</ol>
                   ),
-
                   li: ({ children }) => (
                     <li className="md-li">{children}</li>
                   ),
-
                   blockquote: ({ children }) => (
                     <blockquote className="md-blockquote">
                       {children}
                     </blockquote>
                   ),
-
                   hr: () => (
                     <div className="md-divider"></div>
                   ),
-
                   a: ({ href, children }) => (
                     <a
                       href={href}
@@ -544,40 +627,26 @@ function App() {
                       <span>↗</span>
                     </a>
                   ),
-
                   table: ({ children }) => (
                     <div className="table-wrapper">
                       <table>{children}</table>
                     </div>
                   ),
-
                   thead: ({ children }) => (
                     <thead>{children}</thead>
                   ),
-
                   tbody: ({ children }) => (
                     <tbody>{children}</tbody>
                   ),
-
-                  tr: ({ children }) => (
-                    <tr>{children}</tr>
-                  ),
-
-                  th: ({ children }) => (
-                    <th>{children}</th>
-                  ),
-
-                  td: ({ children }) => (
-                    <td>{children}</td>
-                  ),
+                  tr: ({ children }) => <tr>{children}</tr>,
+                  th: ({ children }) => <th>{children}</th>,
+                  td: ({ children }) => <td>{children}</td>,
                 }}
               >
                 {report}
               </ReactMarkdown>
             </div>
           </article>
-
-          {/* ================= BOTTOM CTA ================= */}
 
           <section className="bottom-cta">
             <div className="cta-orb"></div>
@@ -588,7 +657,10 @@ function App() {
               <h2>Keep digging.</h2>
             </div>
 
-            <button onClick={resetResearch}>
+            <button
+              type="button"
+              onClick={resetResearch}
+            >
               START NEW RESEARCH
               <span>↗</span>
             </button>
@@ -596,7 +668,9 @@ function App() {
         </main>
       )}
 
-      {/* ================= FOOTER ================= */}
+      {/* ===================================================
+          FOOTER
+      =================================================== */}
 
       <footer>
         <div className="footer-brand">
