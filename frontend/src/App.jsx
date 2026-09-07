@@ -17,7 +17,8 @@ import { API_URL } from "./config";
 // =========================================================
 
 const ADMIN_EMAIL = "codexproject9@gmail.com";
-
+const isAdmin =
+  user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
 
 // =========================================================
 // APP
