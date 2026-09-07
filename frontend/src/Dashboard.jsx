@@ -1,3 +1,5 @@
+import React from "react";
+
 function Dashboard({ user }) {
 
   const adminEmail = "codexproject9@gmail.com";

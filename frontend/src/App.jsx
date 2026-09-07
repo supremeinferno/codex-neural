@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import "./index.css";
 
 import ForgotPassword from "./Forgotpassword.jsx";
-import Dashboard from "./Dashboard.jsx";
+import Dashboard from "./Dashboard";
 import Login from "./login.jsx";
 import Register from "./register.jsx";
 import Individual from "./Individual.jsx";
