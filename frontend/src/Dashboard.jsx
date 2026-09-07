@@ -4,832 +4,600 @@ import { API_URL } from "./config";
 const ADMIN_EMAIL = "codexproject9@gmail.com";
 
 function Dashboard({ user }) {
-  const [data, setData] = useState({
-    total_users: 0,
-    total_logins: 0,
-    users: [],
-    recent_logins: [],
-  });
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const [actionLoading, setActionLoading] = useState(false);
-
-  const isAdmin =
-    user?.email?.trim().toLowerCase() ===
-    ADMIN_EMAIL.toLowerCase();
-
-  // ==========================================================
-  // LOAD DASHBOARD
-  // ==========================================================
-
-  const loadDashboard = async () => {
-    if (!isAdmin) return;
-
-    try {
-      setLoading(true);
-      setError("");
-
-      const response = await fetch(
-        `${API_URL}/api/admin/dashboard?email=${encodeURIComponent(
-          user.email
-        )}`
-      );
-
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-
-        throw new Error(
-          result.detail || "Unable to load dashboard."
-        );
-      }
-
-      const result = await response.json();
-
-      setData({
-        total_users: result.total_users || 0,
-        total_logins: result.total_logins || 0,
-        users: result.users || [],
-        recent_logins: result.recent_logins || [],
-      });
-    } catch (err) {
-      console.error("Dashboard error:", err);
-
-      setError(
-        err.message ||
-          "Something went wrong while loading dashboard."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ==========================================================
-  // INITIAL LOAD
-  // ==========================================================
-
-  useEffect(() => {
-    loadDashboard();
-  }, [isAdmin, user?.email]);
-
-  // ==========================================================
-  // REMOVE USER
-  // ==========================================================
-
-  const removeUser = async (userId, email) => {
-    const confirmed = window.confirm(
-      `Remove ${email}?\n\nThis will also remove this user's login history.`
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setActionLoading(true);
-
-      const response = await fetch(
-        `${API_URL}/api/admin/users/${userId}?email=${encodeURIComponent(
-          user.email
-        )}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          result.detail || "Unable to remove user."
-        );
-      }
-
-      await loadDashboard();
-    } catch (err) {
-      console.error("Remove user error:", err);
-
-      alert(
-        err.message ||
-          "Failed to remove user."
-      );
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // ==========================================================
-  // REMOVE SINGLE LOGIN
-  // ==========================================================
-
-  const removeLogin = async (activityId) => {
-    const confirmed = window.confirm(
-      "Remove this login record?"
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setActionLoading(true);
-
-      const response = await fetch(
-        `${API_URL}/api/admin/logins/${activityId}?email=${encodeURIComponent(
-          user.email
-        )}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          result.detail || "Unable to remove login."
-        );
-      }
-
-      await loadDashboard();
-    } catch (err) {
-      console.error("Remove login error:", err);
-
-      alert(
-        err.message ||
-          "Failed to remove login."
-      );
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // ==========================================================
-  // DELETE ALL LOGIN HISTORY
-  // ==========================================================
-
-  const deleteAllLogins = async () => {
-    const confirmed = window.confirm(
-      "Delete ALL recent login history?\n\nThis cannot be undone."
-    );
-
-    if (!confirmed) return;
-
-    try {
-      setActionLoading(true);
-
-      const response = await fetch(
-        `${API_URL}/api/admin/logins?email=${encodeURIComponent(
-          user.email
-        )}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      const result = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(
-          result.detail ||
-            "Unable to delete login history."
-        );
-      }
-
-      await loadDashboard();
-    } catch (err) {
-      console.error(
-        "Delete login history error:",
-        err
-      );
-
-      alert(
-        err.message ||
-          "Failed to delete login history."
-      );
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // ==========================================================
-  // FORMAT DATE
-  // ==========================================================
-
-  const formatDate = (value) => {
-    if (!value) return "—";
-
-    const date = new Date(
-      value.includes("T")
-        ? value
-        : value.replace(" ", "T") + "Z"
-    );
-
-    if (Number.isNaN(date.getTime())) {
-      return value;
-    }
-
-    return date.toLocaleString([], {
-      dateStyle: "medium",
-      timeStyle: "short",
+    const [data, setData] = useState({
+        total_users: 0,
+        total_logins: 0,
+        users: [],
+        recent_logins: [],
     });
-  };
 
-  // ==========================================================
-  // ACCESS DENIED
-  // ==========================================================
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [deleting, setDeleting] = useState(null);
 
-  if (!isAdmin) {
-    return (
-      <div className="dashboard-access-denied">
+    const adminEmail = user?.email || ADMIN_EMAIL;
 
-        <div className="dashboard-denied-card">
+    // =====================================================
+    // LOAD DASHBOARD
+    // =====================================================
 
-          <div className="dashboard-denied-icon">
-            ×
-          </div>
+    const loadDashboard = async () => {
+        try {
+            setLoading(true);
+            setError("");
 
-          <span className="dashboard-eyebrow">
-            RESTRICTED ACCESS
-          </span>
+            const response = await fetch(
+                `${API_URL}/api/admin/dashboard?email=${encodeURIComponent(
+                    adminEmail
+                )}`
+            );
 
-          <h1>
-            Access denied.
-          </h1>
+            const result = await response.json();
 
-          <p>
-            The CODEX administrative console is
-            available only to authorized administrators.
-          </p>
-
-        </div>
-
-      </div>
-    );
-  }
-
-  // ==========================================================
-  // LOADING
-  // ==========================================================
-
-  if (loading) {
-    return (
-      <div className="dashboard-page">
-
-        <div className="dashboard-loading">
-
-          <div className="dashboard-loader"></div>
-
-          <span>
-            LOADING ADMIN CONSOLE
-          </span>
-
-        </div>
-
-      </div>
-    );
-  }
-
-  // ==========================================================
-  // DASHBOARD
-  // ==========================================================
-
-  return (
-    <div className="dashboard-page">
-
-      {/* =====================================================
-          HEADER
-      ===================================================== */}
-
-      <section className="dashboard-header">
-
-        <div>
-
-          <div className="dashboard-eyebrow">
-
-            <span className="dashboard-status-dot"></span>
-
-            ADMINISTRATIVE CONSOLE
-
-          </div>
-
-          <h1>
-            System
-            <span> overview.</span>
-          </h1>
-
-          <p>
-            Monitor CODEX users, authentication activity,
-            and system operations.
-          </p>
-
-        </div>
-
-
-        <div className="dashboard-admin">
-
-          <div className="dashboard-admin-avatar">
-            {user?.email?.charAt(0).toUpperCase() || "A"}
-          </div>
-
-          <div>
-
-            <strong>
-              Administrator
-            </strong>
-
-            <small>
-              {user?.email}
-            </small>
-
-          </div>
-
-        </div>
-
-      </section>
-
-
-      {/* =====================================================
-          ACTION BAR
-      ===================================================== */}
-
-      <section className="dashboard-action-bar">
-
-        <div>
-
-          <span className="dashboard-live-indicator">
-            ●
-          </span>
-
-          SYSTEM LIVE
-
-        </div>
-
-        <div className="dashboard-actions">
-
-          <button
-            className="dashboard-action-button"
-            onClick={loadDashboard}
-            disabled={loading || actionLoading}
-          >
-            ↻ REFRESH
-          </button>
-
-          <button
-            className="dashboard-action-button danger"
-            onClick={deleteAllLogins}
-            disabled={
-              actionLoading ||
-              data.recent_logins.length === 0
+            if (!response.ok) {
+                throw new Error(
+                    result.detail || "Unable to load dashboard."
+                );
             }
-          >
-            DELETE ALL LOGINS
-          </button>
 
-        </div>
+            setData(result);
+        } catch (err) {
+            console.error(err);
+            setError(err.message || "Something went wrong.");
+        } finally {
+            setLoading(false);
+        }
+    };
 
-      </section>
+    useEffect(() => {
+        loadDashboard();
+    }, []);
+
+    // =====================================================
+    // REMOVE USER
+    // =====================================================
+
+    const removeUser = async (userId, email) => {
+        if (email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+            return;
+        }
+
+        const confirmed = window.confirm(
+            `Remove ${email} from registered users?`
+        );
+
+        if (!confirmed) return;
+
+        try {
+            setDeleting(`user-${userId}`);
+
+            const response = await fetch(
+                `${API_URL}/api/admin/users/${userId}?email=${encodeURIComponent(
+                    adminEmail
+                )}`,
+                {
+                    method: "DELETE",
+                }
+            );
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.detail || "Unable to remove user."
+                );
+            }
+
+            await loadDashboard();
+        } catch (err) {
+            alert(err.message);
+        } finally {
+            setDeleting(null);
+        }
+    };
+
+    // =====================================================
+    // REMOVE ONE LOGIN
+    // =====================================================
+
+    const removeLogin = async (activityId) => {
+        const confirmed = window.confirm(
+            "Remove this login activity?"
+        );
+
+        if (!confirmed) return;
+
+        try {
+            setDeleting(`login-${activityId}`);
+
+            const response = await fetch(
+                `${API_URL}/api/admin/logins/${activityId}?email=${encodeURIComponent(
+                    adminEmail
+                )}`,
+                {
+                    method: "DELETE",
+                }
+            );
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.detail || "Unable to remove login."
+                );
+            }
+
+            await loadDashboard();
+        } catch (err) {
+            alert(err.message);
+        } finally {
+            setDeleting(null);
+        }
+    };
+
+    // =====================================================
+    // DELETE ALL LOGIN HISTORY
+    // =====================================================
+
+    const deleteAllLogins = async () => {
+        if (data.recent_logins.length === 0) return;
+
+        const confirmed = window.confirm(
+            "Delete ALL recent login activity?\n\nThis action cannot be undone."
+        );
+
+        if (!confirmed) return;
+
+        try {
+            setDeleting("all-logins");
+
+            const response = await fetch(
+                `${API_URL}/api/admin/logins?email=${encodeURIComponent(
+                    adminEmail
+                )}`,
+                {
+                    method: "DELETE",
+                }
+            );
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    result.detail || "Unable to delete login history."
+                );
+            }
+
+            await loadDashboard();
+        } catch (err) {
+            alert(err.message);
+        } finally {
+            setDeleting(null);
+        }
+    };
+
+    // =====================================================
+    // FORMAT DATE
+    // =====================================================
+
+    const formatDate = (value) => {
+        if (!value) return "—";
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+
+        return date.toLocaleString("en-IN", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    };
+
+    // =====================================================
+    // INITIAL
+    // =====================================================
+
+    const getInitial = (email) => {
+        if (!email) return "U";
+        return email.charAt(0).toUpperCase();
+    };
+
+    // =====================================================
+    // LOADING
+    // =====================================================
+
+    if (loading) {
+        return (
+            <div className="dashboard-page">
+                <div className="dashboard-loading">
+                    <div className="loading-spinner"></div>
+                    <span>Loading control center...</span>
+                </div>
+            </div>
+        );
+    }
+
+    // =====================================================
+    // ERROR
+    // =====================================================
+
+    if (error) {
+        return (
+            <div className="dashboard-page">
+                <div className="dashboard-error">
+                    <span>Unable to load dashboard</span>
+                    <p>{error}</p>
+
+                    <button
+                        className="refresh-btn"
+                        onClick={loadDashboard}
+                    >
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // =====================================================
+    // DASHBOARD
+    // =====================================================
+
+    return (
+        <div className="dashboard-page">
+
+            {/* =========================================
+                HERO
+            ========================================= */}
+
+            <section className="dashboard-hero">
+
+                <div className="hero-top">
+
+                    <div className="hero-admin">
+                        <span className="admin-dot"></span>
+                        <span>Administrator</span>
+                    </div>
+
+                    <button
+                        className="refresh-btn"
+                        onClick={loadDashboard}
+                    >
+                        ↻ &nbsp; Refresh
+                    </button>
+
+                </div>
+
+                <div className="eyebrow">
+                    ADMINISTRATION
+                </div>
+
+                <h1>
+                    Control center.
+                </h1>
+
+                <p>
+                    Monitor registered users and authentication
+                    activity from one centralized dashboard.
+                </p>
+
+            </section>
 
 
-      {/* =====================================================
-          ERROR
-      ===================================================== */}
+            {/* =========================================
+                STAT CARDS
+            ========================================= */}
 
-      {error && (
-        <div className="dashboard-error">
-          {error}
-        </div>
-      )}
+            <section className="stats-grid">
 
+                <div className="stat-card">
 
-      {/* =====================================================
-          METRICS
-      ===================================================== */}
+                    <div className="stat-top">
+                        <span>TOTAL USERS</span>
+                        <span>01</span>
+                    </div>
 
-      <section className="dashboard-grid">
+                    <div className="stat-number">
+                        {data.total_users}
+                    </div>
 
-        <div className="dashboard-card metric-card">
+                    <div className="stat-description">
+                        Registered accounts
+                    </div>
 
-          <span className="metric-label">
-            TOTAL USERS
-          </span>
-
-          <strong>
-            {data.total_users}
-          </strong>
-
-          <small>
-            Registered accounts
-          </small>
-
-        </div>
+                </div>
 
 
-        <div className="dashboard-card metric-card">
+                <div className="stat-card">
 
-          <span className="metric-label">
-            TOTAL LOGINS
-          </span>
+                    <div className="stat-top">
+                        <span>TOTAL LOGINS</span>
+                        <span>02</span>
+                    </div>
 
-          <strong>
-            {data.total_logins}
-          </strong>
+                    <div className="stat-number">
+                        {data.total_logins}
+                    </div>
 
-          <small>
-            Successful login events
-          </small>
+                    <div className="stat-description">
+                        Recorded authentication events
+                    </div>
 
-        </div>
+                </div>
 
-
-        <div className="dashboard-card metric-card">
-
-          <span className="metric-label">
-            RECENT OPERATIONS
-          </span>
-
-          <strong>
-            {data.recent_logins.length}
-          </strong>
-
-          <small>
-            Recorded login activity
-          </small>
-
-        </div>
+            </section>
 
 
-        <div className="dashboard-card metric-card">
+            {/* =========================================
+                RECENT LOGIN ACTIVITY
+            ========================================= */}
 
-          <span className="metric-label">
-            SYSTEM STATUS
-          </span>
+            <section className="dashboard-section">
 
-          <strong className="metric-online">
-            ONLINE
-          </strong>
+                <div className="section-heading">
 
-          <small>
-            All services operational
-          </small>
+                    <div>
+                        <div className="eyebrow">
+                            AUTHENTICATION
+                        </div>
 
-        </div>
+                        <h2>
+                            Recent login activity
+                        </h2>
+                    </div>
 
-      </section>
+                    <div className="section-actions">
 
+                        <span className="event-count">
+                            {data.recent_logins.length} EVENTS
+                        </span>
 
-      {/* =====================================================
-          RECENT LOGINS
-      ===================================================== */}
+                        <button
+                            className="delete-all-btn"
+                            onClick={deleteAllLogins}
+                            disabled={
+                                deleting === "all-logins" ||
+                                data.recent_logins.length === 0
+                            }
+                        >
+                            {deleting === "all-logins"
+                                ? "DELETING..."
+                                : "DELETE ALL"}
+                        </button>
 
-      <section className="dashboard-card dashboard-table-card">
+                    </div>
 
-        <div className="dashboard-section-heading">
-
-          <div>
-
-            <span className="metric-label">
-              RECENT OPERATIONS
-            </span>
-
-            <h2>
-              Login activity
-            </h2>
-
-          </div>
-
-          <span className="dashboard-count">
-            {data.recent_logins.length} EVENTS
-          </span>
-
-        </div>
+                </div>
 
 
-        {data.recent_logins.length === 0 ? (
+                <div className="table-card">
 
-          <div className="dashboard-empty">
-            No login activity recorded.
-          </div>
+                    <div className="activity-table">
 
-        ) : (
+                        <div className="table-header">
 
-          <div className="dashboard-table-wrapper">
-
-            <table className="dashboard-table">
-
-              <thead>
-
-                <tr>
-
-                  <th>
-                    USER
-                  </th>
-
-                  <th>
-                    DATE & TIME
-                  </th>
-
-                  <th>
-                    ACTIVITY ID
-                  </th>
-
-                  <th>
-                    ACTION
-                  </th>
-
-                </tr>
-
-              </thead>
-
-              <tbody>
-
-                {data.recent_logins.map(
-                  (login) => (
-
-                    <tr key={login.id}>
-
-                      <td>
-
-                        <div className="dashboard-user-cell">
-
-                          <div className="dashboard-table-avatar">
-                            {login.email
-                              ?.charAt(0)
-                              .toUpperCase()}
-                          </div>
-
-                          <span>
-                            {login.email}
-                          </span>
+                            <div>USER</div>
+                            <div>DATE & TIME</div>
+                            <div>ACTION</div>
 
                         </div>
 
-                      </td>
+
+                        <div className="activity-scroll">
+
+                            {data.recent_logins.length === 0 ? (
+
+                                <div className="empty-state">
+                                    No login activity recorded.
+                                </div>
+
+                            ) : (
+
+                                data.recent_logins.map((login) => (
+
+                                    <div
+                                        className="activity-row"
+                                        key={login.id}
+                                    >
+
+                                        <div className="user-cell">
+
+                                            <div className="avatar">
+                                                {getInitial(login.email)}
+                                            </div>
+
+                                            <div className="user-email">
+                                                {login.email}
+                                            </div>
+
+                                        </div>
 
 
-                      <td>
-                        {formatDate(
-                          login.login_time
-                        )}
-                      </td>
+                                        <div className="date-cell">
+                                            {formatDate(
+                                                login.login_time
+                                            )}
+                                        </div>
 
 
-                      <td>
-                        #{login.id}
-                      </td>
+                                        <div className="action-cell">
 
+                                            <button
+                                                className="remove-btn"
+                                                disabled={
+                                                    deleting ===
+                                                    `login-${login.id}`
+                                                }
+                                                onClick={() =>
+                                                    removeLogin(
+                                                        login.id
+                                                    )
+                                                }
+                                            >
+                                                {deleting ===
+                                                `login-${login.id}`
+                                                    ? "REMOVING..."
+                                                    : "REMOVE"}
+                                            </button>
 
-                      <td>
+                                        </div>
 
-                        <button
-                          className="table-delete-button"
-                          onClick={() =>
-                            removeLogin(login.id)
-                          }
-                          disabled={actionLoading}
-                        >
-                          REMOVE
-                        </button>
+                                    </div>
 
-                      </td>
+                                ))
 
-                    </tr>
-
-                  )
-                )}
-
-              </tbody>
-
-            </table>
-
-          </div>
-
-        )}
-
-      </section>
-
-
-      {/* =====================================================
-          REGISTERED USERS
-      ===================================================== */}
-
-      <section className="dashboard-card dashboard-table-card">
-
-        <div className="dashboard-section-heading">
-
-          <div>
-
-            <span className="metric-label">
-              USER DIRECTORY
-            </span>
-
-            <h2>
-              Registered users
-            </h2>
-
-          </div>
-
-          <span className="dashboard-count">
-            {data.users.length} USERS
-          </span>
-
-        </div>
-
-
-        {data.users.length === 0 ? (
-
-          <div className="dashboard-empty">
-            No registered users.
-          </div>
-
-        ) : (
-
-          <div className="dashboard-table-wrapper">
-
-            <table className="dashboard-table">
-
-              <thead>
-
-                <tr>
-
-                  <th>
-                    USER
-                  </th>
-
-                  <th>
-                    REGISTERED
-                  </th>
-
-                  <th>
-                    USER ID
-                  </th>
-
-                  <th>
-                    ACTION
-                  </th>
-
-                </tr>
-
-              </thead>
-
-              <tbody>
-
-                {data.users.map(
-                  (registeredUser) => (
-
-                    <tr key={registeredUser.id}>
-
-                      <td>
-
-                        <div className="dashboard-user-cell">
-
-                          <div className="dashboard-table-avatar">
-                            {registeredUser.email
-                              ?.charAt(0)
-                              .toUpperCase()}
-                          </div>
-
-                          <span>
-                            {registeredUser.email}
-                          </span>
+                            )}
 
                         </div>
 
-                      </td>
+                    </div>
+
+                </div>
+
+            </section>
 
 
-                      <td>
-                        {formatDate(
-                          registeredUser.created_at
-                        )}
-                      </td>
+            {/* =========================================
+                REGISTERED USERS
+            ========================================= */}
+
+            <section className="dashboard-section users-section">
+
+                <div className="section-heading">
+
+                    <div>
+                        <div className="eyebrow">
+                            USER DIRECTORY
+                        </div>
+
+                        <h2>
+                            Registered users
+                        </h2>
+                    </div>
+
+                    <span className="event-count">
+                        {data.users.length} USERS
+                    </span>
+
+                </div>
 
 
-                      <td>
-                        #{registeredUser.id}
-                      </td>
+                <div className="table-card">
+
+                    <div className="users-table">
+
+                        <div className="table-header users-header">
+
+                            <div>USER</div>
+                            <div>REGISTERED</div>
+                            <div>ACTION</div>
+
+                        </div>
 
 
-                      <td>
+                        <div className="users-scroll">
 
-                        <button
-                          className="table-delete-button"
-                          onClick={() =>
-                            removeUser(
-                              registeredUser.id,
-                              registeredUser.email
-                            )
-                          }
-                          disabled={
-                            actionLoading ||
-                            registeredUser.email
-                              ?.toLowerCase() ===
-                              ADMIN_EMAIL.toLowerCase()
-                          }
-                        >
-                          {registeredUser.email
-                            ?.toLowerCase() ===
-                          ADMIN_EMAIL.toLowerCase()
-                            ? "ADMIN"
-                            : "REMOVE"}
-                        </button>
+                            {data.users.length === 0 ? (
 
-                      </td>
+                                <div className="empty-state">
+                                    No registered users.
+                                </div>
 
-                    </tr>
+                            ) : (
 
-                  )
-                )}
+                                data.users.map((registeredUser) => {
 
-              </tbody>
+                                    const isAdmin =
+                                        registeredUser.email
+                                            .toLowerCase() ===
+                                        ADMIN_EMAIL.toLowerCase();
 
-            </table>
+                                    return (
 
-          </div>
+                                        <div
+                                            className="activity-row"
+                                            key={registeredUser.id}
+                                        >
 
-        )}
+                                            <div className="user-cell">
 
-      </section>
+                                                <div className="avatar">
+                                                    {getInitial(
+                                                        registeredUser.email
+                                                    )}
+                                                </div>
+
+                                                <div className="user-email">
+                                                    {
+                                                        registeredUser.email
+                                                    }
+                                                </div>
+
+                                            </div>
 
 
-      {/* =====================================================
-          SYSTEM INFORMATION
-      ===================================================== */}
+                                            <div className="date-cell">
+                                                {formatDate(
+                                                    registeredUser.created_at
+                                                )}
+                                            </div>
 
-      <section className="dashboard-bottom-grid">
 
-        <div className="dashboard-card system-card">
+                                            <div className="action-cell">
 
-          <span className="metric-label">
-            SYSTEM INFORMATION
-          </span>
+                                                {isAdmin ? (
 
-          <div className="system-info-row">
-            <span>
-              Platform
-            </span>
+                                                    <span className="admin-badge">
+                                                        ADMIN
+                                                    </span>
 
-            <strong>
-              CODEX Intelligence
-            </strong>
-          </div>
+                                                ) : (
 
-          <div className="system-info-row">
-            <span>
-              Authentication
-            </span>
+                                                    <button
+                                                        className="remove-btn"
+                                                        disabled={
+                                                            deleting ===
+                                                            `user-${registeredUser.id}`
+                                                        }
+                                                        onClick={() =>
+                                                            removeUser(
+                                                                registeredUser.id,
+                                                                registeredUser.email
+                                                            )
+                                                        }
+                                                    >
+                                                        {deleting ===
+                                                        `user-${registeredUser.id}`
+                                                            ? "REMOVING..."
+                                                            : "REMOVE"}
+                                                    </button>
 
-            <strong>
-              SQLite
-            </strong>
-          </div>
+                                                )}
 
-          <div className="system-info-row">
-            <span>
-              Research Engine
-            </span>
+                                            </div>
 
-            <strong>
-              Multi-Agent
-            </strong>
-          </div>
+                                        </div>
 
-          <div className="system-info-row">
-            <span>
-              Document Engine
-            </span>
+                                    );
+                                })
 
-            <strong>
-              RAG
-            </strong>
-          </div>
+                            )}
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
 
         </div>
-
-
-        <div className="dashboard-card architecture-card">
-
-          <span className="metric-label">
-            ARCHITECTURE
-          </span>
-
-          <h2>
-            Observe.
-            <br />
-            Analyze.
-            <br />
-            Control.
-          </h2>
-
-          <p>
-            CODEX provides administrators with a
-            centralized view of authentication,
-            research activity, and system usage.
-          </p>
-
-        </div>
-
-      </section>
-
-    </div>
-  );
+    );
 }
 
 export default Dashboard;
