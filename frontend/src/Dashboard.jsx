@@ -1,7 +1,6 @@
-import React from "react";
-
 function Dashboard({ user }) {
-  const adminEmail = "codeproject9@gmail.com";
+
+  const adminEmail = "codexproject9@gmail.com";
 
   const isAdmin = user?.email?.toLowerCase() === adminEmail.toLowerCase();
 
