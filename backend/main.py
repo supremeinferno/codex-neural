@@ -244,3 +244,173 @@ def individual_chat(
     )
 
     return result
+
+
+# ==========================================================
+# ADMIN DASHBOARD
+# ==========================================================
+
+from fastapi import HTTPException
+
+from auth import (
+    get_total_users,
+    get_total_logins,
+    get_users,
+    get_login_activity,
+    delete_user,
+    clear_login_activity,
+)
+
+
+ADMIN_EMAIL = "codexproject9@gmail.com"
+
+
+def verify_admin(email: str):
+
+    if not email:
+        raise HTTPException(
+            status_code=401,
+            detail="Administrator email is required."
+        )
+
+    if email.strip().lower() != ADMIN_EMAIL.lower():
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator access required."
+        )
+
+
+# ==========================================================
+# DASHBOARD OVERVIEW
+# ==========================================================
+
+@app.get("/api/admin/dashboard")
+def admin_dashboard(email: str):
+
+    verify_admin(email)
+
+    return {
+        "success": True,
+
+        "total_users": get_total_users(),
+
+        "total_logins": get_total_logins(),
+
+        "users": [
+            {
+                "id": user[0],
+                "email": user[1],
+                "created_at": user[2],
+            }
+            for user in get_users()
+        ],
+
+        "recent_logins": [
+            {
+                "id": login[0],
+                "user_id": login[1],
+                "email": login[2],
+                "login_time": login[3],
+            }
+            for login in get_login_activity()
+        ],
+    }
+
+
+# ==========================================================
+# REMOVE ONE USER
+# ==========================================================
+
+@app.delete("/api/admin/users/{user_id}")
+def admin_delete_user(
+    user_id: int,
+    email: str
+):
+
+    verify_admin(email)
+
+    # Never allow admin account to be deleted
+    if email.strip().lower() == ADMIN_EMAIL.lower():
+
+        # Check target user separately below
+        pass
+
+    success = delete_user(user_id)
+
+    if not success:
+
+        raise HTTPException(
+            status_code=404,
+            detail="User not found."
+        )
+
+    return {
+        "success": True,
+        "message": "User removed successfully."
+    }
+
+
+# ==========================================================
+# DELETE ONE LOGIN RECORD
+# ==========================================================
+
+@app.delete("/api/admin/logins/{activity_id}")
+def admin_delete_login(
+    activity_id: int,
+    email: str
+):
+
+    verify_admin(email)
+
+    import sqlite3
+
+    conn = sqlite3.connect("users.db")
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        DELETE FROM login_activity
+        WHERE id = ?
+        """,
+        (activity_id,)
+    )
+
+    deleted = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    if deleted == 0:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Login record not found."
+        )
+
+    # Keep Excel synchronized
+    from auth import sync_excel
+
+    sync_excel()
+
+    return {
+        "success": True,
+        "message": "Login record removed."
+    }
+
+
+# ==========================================================
+# DELETE ALL LOGIN HISTORY
+# ==========================================================
+
+@app.delete("/api/admin/logins")
+def admin_clear_logins(email: str):
+
+    verify_admin(email)
+
+    clear_login_activity()
+
+    return {
+        "success": True,
+        "message": "All login history deleted."
+    }
