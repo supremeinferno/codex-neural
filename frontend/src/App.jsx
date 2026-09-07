@@ -32,9 +32,22 @@ function App() {
 
   const [authPage, setAuthPage] = useState("login");
 
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    try {
+      return !!localStorage.getItem("codex_user");
+    } catch {
+      return false;
+    }
+  });
 
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem("codex_user");
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
 
 
   const handleLogin = (loggedInUser) => {
@@ -46,6 +59,12 @@ function App() {
     setAuthPage("login");
 
     setActiveTab("nexus");
+
+    try {
+      localStorage.setItem("codex_user", JSON.stringify(loggedInUser));
+    } catch (err) {
+      console.error("Failed to persist session:", err);
+    }
   };
 
 
@@ -64,6 +83,12 @@ function App() {
     setReport("");
 
     setError("");
+
+    try {
+      localStorage.removeItem("codex_user");
+    } catch (err) {
+      console.error("Failed to clear session:", err);
+    }
   };
 
 
@@ -80,7 +105,21 @@ function App() {
   // MAIN TABS
   // =======================================================
 
-  const [activeTab, setActiveTab] = useState("nexus");
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      return localStorage.getItem("codex_active_tab") || "nexus";
+    } catch {
+      return "nexus";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("codex_active_tab", activeTab);
+    } catch (err) {
+      console.error("Failed to persist active tab:", err);
+    }
+  }, [activeTab]);
 
 
   // =======================================================
