@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 import sqlite3
 from pathlib import Path
+from datetime import datetime
 
 
 # =========================================================
@@ -31,8 +32,12 @@ from backend.individual import (
 # =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "users.db"
 
-DATABASE_PATH = BASE_DIR / "users.db"
+
+# =========================================================
+# ADMIN
+# =========================================================
 
 ADMIN_EMAIL = "codexproject9@gmail.com"
 
@@ -62,16 +67,107 @@ app.add_middleware(
 
 
 # =========================================================
-# DATABASE HELPER
+# DATABASE
 # =========================================================
 
 def get_db():
-
-    conn = sqlite3.connect(str(DATABASE_PATH))
-
+    conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
-
     return conn
+
+
+def initialize_admin_database():
+    """
+    Repairs the existing database without deleting existing users.
+    """
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # -----------------------------------------------------
+    # Check users table
+    # -----------------------------------------------------
+
+    cursor.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type='table'
+        AND name='users'
+        """
+    )
+
+    users_exists = cursor.fetchone()
+
+    if users_exists:
+
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [row["name"] for row in cursor.fetchall()]
+
+        # Add created_at if old database doesn't have it
+        if "created_at" not in columns:
+
+            cursor.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN created_at TEXT
+                """
+            )
+
+            cursor.execute(
+                """
+                UPDATE users
+                SET created_at = ?
+                WHERE created_at IS NULL
+                OR created_at = ''
+                """,
+                (datetime.now().isoformat(sep=" ", timespec="seconds"),),
+            )
+
+    # -----------------------------------------------------
+    # Login activity table
+    # -----------------------------------------------------
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS login_activity (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            email TEXT NOT NULL,
+            login_time TEXT NOT NULL
+        )
+        """
+    )
+
+    conn.commit()
+    conn.close()
+
+
+# Initialize database when backend starts
+initialize_admin_database()
+
+
+# =========================================================
+# DATABASE HELPERS
+# =========================================================
+
+def sync_excel_safely():
+    """
+    Synchronize Excel if sync_excel exists in auth.py.
+    The API will continue working even if Excel sync fails.
+    """
+
+    try:
+        from backend.auth import sync_excel
+
+        sync_excel()
+
+    except ImportError:
+        # sync_excel is not available in auth.py
+        pass
+
+    except Exception as e:
+        print("Excel synchronization warning:", e)
 
 
 # =========================================================
@@ -115,13 +211,12 @@ class IndividualQuestionRequest(BaseModel):
 def home():
 
     return {
-        "success": True,
-        "message": "Nexus Research API is running",
+        "message": "Nexus Research API is running"
     }
 
 
 # =========================================================
-# AUTHENTICATION
+# REGISTER
 # =========================================================
 
 @app.post("/api/register")
@@ -129,37 +224,85 @@ def register(request: AuthRequest):
 
     success, message = register_user(
         request.email,
-        request.password,
+        request.password
     )
+
+    if success:
+
+        # Update created_at for newly created user
+        conn = get_db()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            UPDATE users
+            SET created_at = ?
+            WHERE email = ?
+            AND (created_at IS NULL OR created_at = '')
+            """,
+            (
+                datetime.now().isoformat(
+                    sep=" ",
+                    timespec="seconds"
+                ),
+                request.email.strip().lower(),
+            ),
+        )
+
+        conn.commit()
+        conn.close()
+
+        sync_excel_safely()
 
     return {
         "success": success,
-        "message": message,
+        "message": message
     }
 
+
+# =========================================================
+# LOGIN
+# =========================================================
 
 @app.post("/api/login")
 def login(request: AuthRequest):
 
     user = authenticate_user(
         request.email,
-        request.password,
+        request.password
     )
 
-    if user:
+    if not user:
+
+        return {
+            "success": False,
+            "message": "Invalid email or password."
+        }
+
+    # -----------------------------------------------------
+    # Get user ID
+    # -----------------------------------------------------
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, email
+        FROM users
+        WHERE LOWER(email) = LOWER(?)
+        LIMIT 1
+        """,
+        (request.email.strip(),)
+    )
+
+    db_user = cursor.fetchone()
+
+    if db_user:
 
         # -------------------------------------------------
-        # RECORD LOGIN ACTIVITY
+        # Record login
         # -------------------------------------------------
-
-        conn = get_db()
-        cursor = conn.cursor()
-
-        user_id = None
-
-        # authenticate_user may return a dictionary
-        if isinstance(user, dict):
-            user_id = user.get("id")
 
         cursor.execute(
             """
@@ -169,26 +312,28 @@ def login(request: AuthRequest):
                 email,
                 login_time
             )
-            VALUES (?, ?, datetime('now', 'localtime'))
+            VALUES (?, ?, ?)
             """,
             (
-                user_id,
-                request.email.strip().lower(),
+                db_user["id"],
+                db_user["email"],
+                datetime.now().isoformat(
+                    sep=" ",
+                    timespec="seconds"
+                ),
             ),
         )
 
         conn.commit()
-        conn.close()
 
-        return {
-            "success": True,
-            "message": "Login successful",
-            "user": user,
-        }
+    conn.close()
+
+    sync_excel_safely()
 
     return {
-        "success": False,
-        "message": "Invalid email or password.",
+        "success": True,
+        "message": "Login successful",
+        "user": user
     }
 
 
@@ -197,15 +342,17 @@ def login(request: AuthRequest):
 # =========================================================
 
 @app.post("/api/forgot-password")
-def forgot_password(request: ForgotPasswordRequest):
+def forgot_password(
+    request: ForgotPasswordRequest
+):
 
     success, message = request_password_reset(
-        request.email,
+        request.email
     )
 
     return {
         "success": success,
-        "message": message,
+        "message": message
     }
 
 
@@ -214,16 +361,18 @@ def forgot_password(request: ForgotPasswordRequest):
 # =========================================================
 
 @app.post("/api/verify-otp")
-def verify_otp_endpoint(request: VerifyOTPRequest):
+def verify_otp_endpoint(
+    request: VerifyOTPRequest
+):
 
     success, message = verify_otp(
         request.email,
-        request.otp,
+        request.otp
     )
 
     return {
         "success": success,
-        "message": message,
+        "message": message
     }
 
 
@@ -233,18 +382,18 @@ def verify_otp_endpoint(request: VerifyOTPRequest):
 
 @app.post("/api/reset-password")
 def reset_password_endpoint(
-    request: ResetPasswordRequest,
+    request: ResetPasswordRequest
 ):
 
     success, message = reset_password(
         request.email,
         request.otp,
-        request.new_password,
+        request.new_password
     )
 
     return {
         "success": success,
-        "message": message,
+        "message": message
     }
 
 
@@ -253,22 +402,24 @@ def reset_password_endpoint(
 # =========================================================
 
 @app.post("/api/research")
-def research(request: ResearchRequest):
+def research(
+    request: ResearchRequest
+):
 
     result = run_research_pipeline(
-        request.topic,
+        request.topic
     )
 
     return result
 
 
 # =========================================================
-# INDIVIDUAL PDF ANALYZER
+# INDIVIDUAL PDF UPLOAD
 # =========================================================
 
 @app.post("/api/individual/upload")
 async def upload_individual_pdf(
-    file: UploadFile = File(...),
+    file: UploadFile = File(...)
 ):
 
     if (
@@ -278,14 +429,14 @@ async def upload_individual_pdf(
 
         return {
             "success": False,
-            "message": "Only PDF files are allowed.",
+            "message": "Only PDF files are allowed."
         }
 
     pdf_bytes = await file.read()
 
     result = build_individual_index(
         pdf_bytes,
-        file.filename,
+        file.filename
     )
 
     return result
@@ -297,19 +448,19 @@ async def upload_individual_pdf(
 
 @app.post("/api/individual/chat")
 def individual_chat(
-    request: IndividualQuestionRequest,
+    request: IndividualQuestionRequest
 ):
 
     if not request.question.strip():
 
         return {
             "success": False,
-            "message": "Please enter a question.",
+            "message": "Please enter a question."
         }
 
     result = answer_individual_question(
         request.question,
-        request.document_id,
+        request.document_id
     )
 
     return result
@@ -325,14 +476,14 @@ def verify_admin(email: str):
 
         raise HTTPException(
             status_code=401,
-            detail="Administrator email is required.",
+            detail="Administrator email is required."
         )
 
     if email.strip().lower() != ADMIN_EMAIL.lower():
 
         raise HTTPException(
             status_code=403,
-            detail="Administrator access required.",
+            detail="Administrator access required."
         )
 
 
@@ -345,8 +496,10 @@ def admin_dashboard(email: str):
 
     verify_admin(email)
 
-    conn = get_db()
+    # Make sure old DB is repaired
+    initialize_admin_database()
 
+    conn = get_db()
     cursor = conn.cursor()
 
     # -----------------------------------------------------
@@ -354,22 +507,26 @@ def admin_dashboard(email: str):
     # -----------------------------------------------------
 
     cursor.execute(
-        "SELECT COUNT(*) FROM users"
+        """
+        SELECT COUNT(*) AS total
+        FROM users
+        """
     )
 
-    total_users = cursor.fetchone()[0]
-
+    total_users = cursor.fetchone()["total"]
 
     # -----------------------------------------------------
     # TOTAL LOGINS
     # -----------------------------------------------------
 
     cursor.execute(
-        "SELECT COUNT(*) FROM login_activity"
+        """
+        SELECT COUNT(*) AS total
+        FROM login_activity
+        """
     )
 
-    total_logins = cursor.fetchone()[0]
-
+    total_logins = cursor.fetchone()["total"]
 
     # -----------------------------------------------------
     # USERS
@@ -382,21 +539,19 @@ def admin_dashboard(email: str):
             email,
             created_at
         FROM users
-        ORDER BY created_at DESC
+        ORDER BY id DESC
         """
     )
 
-    users = [
+    users = []
 
-        {
+    for row in cursor.fetchall():
+
+        users.append({
             "id": row["id"],
             "email": row["email"],
             "created_at": row["created_at"],
-        }
-
-        for row in cursor.fetchall()
-    ]
-
+        })
 
     # -----------------------------------------------------
     # RECENT LOGINS
@@ -410,100 +565,87 @@ def admin_dashboard(email: str):
             email,
             login_time
         FROM login_activity
-        ORDER BY login_time DESC
+        ORDER BY id DESC
+        LIMIT 100
         """
     )
 
-    recent_logins = [
+    recent_logins = []
 
-        {
+    for row in cursor.fetchall():
+
+        recent_logins.append({
             "id": row["id"],
             "user_id": row["user_id"],
             "email": row["email"],
             "login_time": row["login_time"],
-        }
-
-        for row in cursor.fetchall()
-    ]
-
+        })
 
     conn.close()
 
-
     return {
-
         "success": True,
-
         "total_users": total_users,
-
         "total_logins": total_logins,
-
         "users": users,
-
         "recent_logins": recent_logins,
-
     }
 
 
 # =========================================================
-# REMOVE USER
+# DELETE USER
 # =========================================================
 
 @app.delete("/api/admin/users/{user_id}")
 def admin_delete_user(
     user_id: int,
-    email: str,
+    email: str
 ):
 
     verify_admin(email)
 
     conn = get_db()
-
     cursor = conn.cursor()
 
-
     # -----------------------------------------------------
-    # FIND TARGET USER
+    # Find target user
     # -----------------------------------------------------
 
     cursor.execute(
         """
-        SELECT email
+        SELECT id, email
         FROM users
         WHERE id = ?
         """,
-        (user_id,),
+        (user_id,)
     )
 
-    user = cursor.fetchone()
+    target = cursor.fetchone()
 
-
-    if user is None:
+    if not target:
 
         conn.close()
 
         raise HTTPException(
             status_code=404,
-            detail="User not found.",
+            detail="User not found."
         )
-
 
     # -----------------------------------------------------
     # NEVER DELETE ADMIN
     # -----------------------------------------------------
 
-    if user["email"].strip().lower() == ADMIN_EMAIL.lower():
+    if target["email"].strip().lower() == ADMIN_EMAIL.lower():
 
         conn.close()
 
         raise HTTPException(
             status_code=403,
-            detail="Administrator account cannot be deleted.",
+            detail="Administrator account cannot be deleted."
         )
 
-
     # -----------------------------------------------------
-    # DELETE LOGIN HISTORY OF USER
+    # Delete user's login history
     # -----------------------------------------------------
 
     cursor.execute(
@@ -511,12 +653,11 @@ def admin_delete_user(
         DELETE FROM login_activity
         WHERE user_id = ?
         """,
-        (user_id,),
+        (user_id,)
     )
 
-
     # -----------------------------------------------------
-    # DELETE USER
+    # Delete user
     # -----------------------------------------------------
 
     cursor.execute(
@@ -524,21 +665,17 @@ def admin_delete_user(
         DELETE FROM users
         WHERE id = ?
         """,
-        (user_id,),
+        (user_id,)
     )
 
-
     conn.commit()
-
     conn.close()
 
+    sync_excel_safely()
 
     return {
-
         "success": True,
-
-        "message": "User removed successfully.",
-
+        "message": "User removed successfully."
     }
 
 
@@ -549,46 +686,39 @@ def admin_delete_user(
 @app.delete("/api/admin/logins/{activity_id}")
 def admin_delete_login(
     activity_id: int,
-    email: str,
+    email: str
 ):
 
     verify_admin(email)
 
     conn = get_db()
-
     cursor = conn.cursor()
-
 
     cursor.execute(
         """
         DELETE FROM login_activity
         WHERE id = ?
         """,
-        (activity_id,),
+        (activity_id,)
     )
-
 
     deleted = cursor.rowcount
 
     conn.commit()
-
     conn.close()
-
 
     if deleted == 0:
 
         raise HTTPException(
             status_code=404,
-            detail="Login record not found.",
+            detail="Login record not found."
         )
 
+    sync_excel_safely()
 
     return {
-
         "success": True,
-
-        "message": "Login record removed.",
-
+        "message": "Login record removed."
     }
 
 
@@ -597,35 +727,32 @@ def admin_delete_login(
 # =========================================================
 
 @app.delete("/api/admin/logins")
-def admin_clear_logins(email: str):
+def admin_clear_logins(
+    email: str
+):
 
     verify_admin(email)
 
     conn = get_db()
-
     cursor = conn.cursor()
 
-
     cursor.execute(
-        "DELETE FROM login_activity"
+        """
+        DELETE FROM login_activity
+        """
     )
-
 
     deleted = cursor.rowcount
 
     conn.commit()
-
     conn.close()
 
+    sync_excel_safely()
 
     return {
-
         "success": True,
-
         "message": "All login history deleted.",
-
-        "deleted_count": deleted,
-
+        "deleted": deleted,
     }
 
 
@@ -637,52 +764,10 @@ def admin_clear_logins(email: str):
 def health_check():
 
     return {
-
-        "success": True,
-
         "status": "healthy",
-
-        "database": DATABASE_PATH.exists(),
-
-    }
-
-
-
-# =========================================================
-# DATABASE HELPER
-# =========================================================
-
-def get_db():
-
-    conn = sqlite3.connect(str(DATABASE_PATH))
-
-    conn.row_factory = sqlite3.Row
-
-    return conn
-
-
-# =========================================================
-# DATABASE INITIALIZATION
-# =========================================================
-
-def initialize_database():
-
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS login_activity (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            email TEXT NOT NULL,
-            login_time TEXT NOT NULL
+        "database": DB_PATH.name,
+        "timestamp": datetime.now().isoformat(
+            sep=" ",
+            timespec="seconds"
         )
-        """
-    )
-
-    conn.commit()
-    conn.close()
-
-
-initialize_database()
+    }
