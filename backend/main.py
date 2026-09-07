@@ -148,6 +148,38 @@ def login(request: AuthRequest):
 
     if user:
 
+        # -------------------------------------------------
+        # RECORD LOGIN ACTIVITY
+        # -------------------------------------------------
+
+        conn = get_db()
+        cursor = conn.cursor()
+
+        user_id = None
+
+        # authenticate_user may return a dictionary
+        if isinstance(user, dict):
+            user_id = user.get("id")
+
+        cursor.execute(
+            """
+            INSERT INTO login_activity
+            (
+                user_id,
+                email,
+                login_time
+            )
+            VALUES (?, ?, datetime('now', 'localtime'))
+            """,
+            (
+                user_id,
+                request.email.strip().lower(),
+            ),
+        )
+
+        conn.commit()
+        conn.close()
+
         return {
             "success": True,
             "message": "Login successful",
@@ -613,3 +645,44 @@ def health_check():
         "database": DATABASE_PATH.exists(),
 
     }
+
+
+
+# =========================================================
+# DATABASE HELPER
+# =========================================================
+
+def get_db():
+
+    conn = sqlite3.connect(str(DATABASE_PATH))
+
+    conn.row_factory = sqlite3.Row
+
+    return conn
+
+
+# =========================================================
+# DATABASE INITIALIZATION
+# =========================================================
+
+def initialize_database():
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS login_activity (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            email TEXT NOT NULL,
+            login_time TEXT NOT NULL
+        )
+        """
+    )
+
+    conn.commit()
+    conn.close()
+
+
+initialize_database()
