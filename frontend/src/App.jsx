@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import "./index.css";
 
 import ForgotPassword from "./Forgotpassword.jsx";
+import Dashboard from "./Dashboard.jsx";
 import Login from "./login.jsx";
 import Register from "./register.jsx";
 import Individual from "./Individual.jsx";
@@ -317,32 +318,29 @@ function App() {
   // =======================================================
 
   if (activeTab === "dashboard") {
-    if (!isAdmin) {
-      return null;
-    }
+
+  if (!isAdmin) {
+    setActiveTab("nexus");
+    return null;
+  }
 
     return (
       <div className="app">
-        <Background />
-        <Navbar />
 
-        <main className="dashboard-placeholder">
-          <div className="eyebrow">
-            <span></span>
-            ADMIN CONSOLE
-          </div>
+        <div className="ambient ambient-one"></div>
+        <div className="ambient ambient-two"></div>
 
-          <h1>
-            Admin
-            <br />
-            <span>Dashboard.</span>
-          </h1>
+        <div className="stars">
+          {Array.from({ length: 28 }).map((_, index) => (
+            <span
+              key={index}
+              className={`star star-${index % 5}`}
+            ></span>
+          ))}
+        </div>
 
-          <p>
-            Administrative analytics, users, research activity,
-            and system information will appear here.
-          </p>
-        </main>
+        <Dashboard user={user} />
+
       </div>
     );
   }
