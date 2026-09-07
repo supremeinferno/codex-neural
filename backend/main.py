@@ -1,6 +1,14 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+import sqlite3
+from pathlib import Path
+
+
+# =========================================================
+# BACKEND MODULES
+# =========================================================
 
 from backend.pipeline import run_research_pipeline
 
@@ -9,13 +17,24 @@ from backend.auth import (
     authenticate_user,
     request_password_reset,
     verify_otp,
-    reset_password
+    reset_password,
 )
 
 from backend.individual import (
     build_individual_index,
-    answer_individual_question
+    answer_individual_question,
 )
+
+
+# =========================================================
+# PATHS
+# =========================================================
+
+BASE_DIR = Path(__file__).resolve().parent
+
+DATABASE_PATH = BASE_DIR / "users.db"
+
+ADMIN_EMAIL = "codexproject9@gmail.com"
 
 
 # =========================================================
@@ -25,7 +44,7 @@ from backend.individual import (
 app = FastAPI(
     title="Nexus Research API",
     description="Multi-Agent AI Research System",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 
@@ -40,6 +59,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# =========================================================
+# DATABASE HELPER
+# =========================================================
+
+def get_db():
+
+    conn = sqlite3.connect(str(DATABASE_PATH))
+
+    conn.row_factory = sqlite3.Row
+
+    return conn
 
 
 # =========================================================
@@ -81,8 +113,10 @@ class IndividualQuestionRequest(BaseModel):
 
 @app.get("/api")
 def home():
+
     return {
-        "message": "Nexus Research API is running"
+        "success": True,
+        "message": "Nexus Research API is running",
     }
 
 
@@ -95,12 +129,12 @@ def register(request: AuthRequest):
 
     success, message = register_user(
         request.email,
-        request.password
+        request.password,
     )
 
     return {
         "success": success,
-        "message": message
+        "message": message,
     }
 
 
@@ -109,19 +143,20 @@ def login(request: AuthRequest):
 
     user = authenticate_user(
         request.email,
-        request.password
+        request.password,
     )
 
     if user:
+
         return {
             "success": True,
             "message": "Login successful",
-            "user": user
+            "user": user,
         }
 
     return {
         "success": False,
-        "message": "Invalid email or password."
+        "message": "Invalid email or password.",
     }
 
 
@@ -133,12 +168,12 @@ def login(request: AuthRequest):
 def forgot_password(request: ForgotPasswordRequest):
 
     success, message = request_password_reset(
-        request.email
+        request.email,
     )
 
     return {
         "success": success,
-        "message": message
+        "message": message,
     }
 
 
@@ -151,12 +186,12 @@ def verify_otp_endpoint(request: VerifyOTPRequest):
 
     success, message = verify_otp(
         request.email,
-        request.otp
+        request.otp,
     )
 
     return {
         "success": success,
-        "message": message
+        "message": message,
     }
 
 
@@ -166,18 +201,18 @@ def verify_otp_endpoint(request: VerifyOTPRequest):
 
 @app.post("/api/reset-password")
 def reset_password_endpoint(
-    request: ResetPasswordRequest
+    request: ResetPasswordRequest,
 ):
 
     success, message = reset_password(
         request.email,
         request.otp,
-        request.new_password
+        request.new_password,
     )
 
     return {
         "success": success,
-        "message": message
+        "message": message,
     }
 
 
@@ -189,7 +224,7 @@ def reset_password_endpoint(
 def research(request: ResearchRequest):
 
     result = run_research_pipeline(
-        request.topic
+        request.topic,
     )
 
     return result
@@ -201,23 +236,24 @@ def research(request: ResearchRequest):
 
 @app.post("/api/individual/upload")
 async def upload_individual_pdf(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
 ):
 
     if (
         not file.filename
         or not file.filename.lower().endswith(".pdf")
     ):
+
         return {
             "success": False,
-            "message": "Only PDF files are allowed."
+            "message": "Only PDF files are allowed.",
         }
 
     pdf_bytes = await file.read()
 
     result = build_individual_index(
         pdf_bytes,
-        file.filename
+        file.filename,
     )
 
     return result
@@ -229,188 +265,351 @@ async def upload_individual_pdf(
 
 @app.post("/api/individual/chat")
 def individual_chat(
-    request: IndividualQuestionRequest
+    request: IndividualQuestionRequest,
 ):
 
     if not request.question.strip():
+
         return {
             "success": False,
-            "message": "Please enter a question."
+            "message": "Please enter a question.",
         }
 
     result = answer_individual_question(
         request.question,
-        request.document_id
+        request.document_id,
     )
 
     return result
 
 
-# ==========================================================
-# ADMIN DASHBOARD
-# ==========================================================
-
-from fastapi import HTTPException
-
-from auth import (
-    get_total_users,
-    get_total_logins,
-    get_users,
-    get_login_activity,
-    delete_user,
-    clear_login_activity,
-)
-
-
-ADMIN_EMAIL = "codexproject9@gmail.com"
-
+# =========================================================
+# ADMIN AUTHORIZATION
+# =========================================================
 
 def verify_admin(email: str):
 
     if not email:
+
         raise HTTPException(
             status_code=401,
-            detail="Administrator email is required."
+            detail="Administrator email is required.",
         )
 
     if email.strip().lower() != ADMIN_EMAIL.lower():
+
         raise HTTPException(
             status_code=403,
-            detail="Administrator access required."
+            detail="Administrator access required.",
         )
 
 
-# ==========================================================
-# DASHBOARD OVERVIEW
-# ==========================================================
+# =========================================================
+# ADMIN DASHBOARD
+# =========================================================
 
 @app.get("/api/admin/dashboard")
 def admin_dashboard(email: str):
 
     verify_admin(email)
 
+    conn = get_db()
+
+    cursor = conn.cursor()
+
+    # -----------------------------------------------------
+    # TOTAL USERS
+    # -----------------------------------------------------
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM users"
+    )
+
+    total_users = cursor.fetchone()[0]
+
+
+    # -----------------------------------------------------
+    # TOTAL LOGINS
+    # -----------------------------------------------------
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM login_activity"
+    )
+
+    total_logins = cursor.fetchone()[0]
+
+
+    # -----------------------------------------------------
+    # USERS
+    # -----------------------------------------------------
+
+    cursor.execute(
+        """
+        SELECT
+            id,
+            email,
+            created_at
+        FROM users
+        ORDER BY created_at DESC
+        """
+    )
+
+    users = [
+
+        {
+            "id": row["id"],
+            "email": row["email"],
+            "created_at": row["created_at"],
+        }
+
+        for row in cursor.fetchall()
+    ]
+
+
+    # -----------------------------------------------------
+    # RECENT LOGINS
+    # -----------------------------------------------------
+
+    cursor.execute(
+        """
+        SELECT
+            id,
+            user_id,
+            email,
+            login_time
+        FROM login_activity
+        ORDER BY login_time DESC
+        """
+    )
+
+    recent_logins = [
+
+        {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "email": row["email"],
+            "login_time": row["login_time"],
+        }
+
+        for row in cursor.fetchall()
+    ]
+
+
+    conn.close()
+
+
     return {
+
         "success": True,
 
-        "total_users": get_total_users(),
+        "total_users": total_users,
 
-        "total_logins": get_total_logins(),
+        "total_logins": total_logins,
 
-        "users": [
-            {
-                "id": user[0],
-                "email": user[1],
-                "created_at": user[2],
-            }
-            for user in get_users()
-        ],
+        "users": users,
 
-        "recent_logins": [
-            {
-                "id": login[0],
-                "user_id": login[1],
-                "email": login[2],
-                "login_time": login[3],
-            }
-            for login in get_login_activity()
-        ],
+        "recent_logins": recent_logins,
+
     }
 
 
-# ==========================================================
-# REMOVE ONE USER
-# ==========================================================
+# =========================================================
+# REMOVE USER
+# =========================================================
 
 @app.delete("/api/admin/users/{user_id}")
 def admin_delete_user(
     user_id: int,
-    email: str
+    email: str,
 ):
 
     verify_admin(email)
 
-    # Never allow admin account to be deleted
-    if email.strip().lower() == ADMIN_EMAIL.lower():
+    conn = get_db()
 
-        # Check target user separately below
-        pass
+    cursor = conn.cursor()
 
-    success = delete_user(user_id)
 
-    if not success:
+    # -----------------------------------------------------
+    # FIND TARGET USER
+    # -----------------------------------------------------
+
+    cursor.execute(
+        """
+        SELECT email
+        FROM users
+        WHERE id = ?
+        """,
+        (user_id,),
+    )
+
+    user = cursor.fetchone()
+
+
+    if user is None:
+
+        conn.close()
 
         raise HTTPException(
             status_code=404,
-            detail="User not found."
+            detail="User not found.",
         )
 
+
+    # -----------------------------------------------------
+    # NEVER DELETE ADMIN
+    # -----------------------------------------------------
+
+    if user["email"].strip().lower() == ADMIN_EMAIL.lower():
+
+        conn.close()
+
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator account cannot be deleted.",
+        )
+
+
+    # -----------------------------------------------------
+    # DELETE LOGIN HISTORY OF USER
+    # -----------------------------------------------------
+
+    cursor.execute(
+        """
+        DELETE FROM login_activity
+        WHERE user_id = ?
+        """,
+        (user_id,),
+    )
+
+
+    # -----------------------------------------------------
+    # DELETE USER
+    # -----------------------------------------------------
+
+    cursor.execute(
+        """
+        DELETE FROM users
+        WHERE id = ?
+        """,
+        (user_id,),
+    )
+
+
+    conn.commit()
+
+    conn.close()
+
+
     return {
+
         "success": True,
-        "message": "User removed successfully."
+
+        "message": "User removed successfully.",
+
     }
 
 
-# ==========================================================
+# =========================================================
 # DELETE ONE LOGIN RECORD
-# ==========================================================
+# =========================================================
 
 @app.delete("/api/admin/logins/{activity_id}")
 def admin_delete_login(
     activity_id: int,
-    email: str
+    email: str,
 ):
 
     verify_admin(email)
 
-    import sqlite3
-
-    conn = sqlite3.connect("users.db")
+    conn = get_db()
 
     cursor = conn.cursor()
+
 
     cursor.execute(
         """
         DELETE FROM login_activity
         WHERE id = ?
         """,
-        (activity_id,)
+        (activity_id,),
     )
+
 
     deleted = cursor.rowcount
 
     conn.commit()
+
     conn.close()
+
 
     if deleted == 0:
 
         raise HTTPException(
             status_code=404,
-            detail="Login record not found."
+            detail="Login record not found.",
         )
 
-    # Keep Excel synchronized
-    from auth import sync_excel
-
-    sync_excel()
 
     return {
+
         "success": True,
-        "message": "Login record removed."
+
+        "message": "Login record removed.",
+
     }
 
 
-# ==========================================================
+# =========================================================
 # DELETE ALL LOGIN HISTORY
-# ==========================================================
+# =========================================================
 
 @app.delete("/api/admin/logins")
 def admin_clear_logins(email: str):
 
     verify_admin(email)
 
-    clear_login_activity()
+    conn = get_db()
+
+    cursor = conn.cursor()
+
+
+    cursor.execute(
+        "DELETE FROM login_activity"
+    )
+
+
+    deleted = cursor.rowcount
+
+    conn.commit()
+
+    conn.close()
+
 
     return {
+
         "success": True,
-        "message": "All login history deleted."
+
+        "message": "All login history deleted.",
+
+        "deleted_count": deleted,
+
+    }
+
+
+# =========================================================
+# HEALTH CHECK
+# =========================================================
+
+@app.get("/api/health")
+def health_check():
+
+    return {
+
+        "success": True,
+
+        "status": "healthy",
+
+        "database": DATABASE_PATH.exists(),
+
     }
