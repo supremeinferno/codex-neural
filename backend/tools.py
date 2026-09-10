@@ -14,6 +14,12 @@ load_dotenv()
 
 tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
+# Roughly 4 characters ~= 1 token. Keeping scraped pages under ~16,000
+# characters (~4,000 tokens) leaves headroom under Groq's free-tier
+# 8,000 TPM limit once the system prompt, tool schema, and conversation
+# history are counted too.
+MAX_SCRAPE_CHARS = 16000
+
 
 @tool
 def tavily_search(query: str) -> list:
@@ -76,6 +82,12 @@ def scrape_webpage(url: str) -> str:
             separator=" ",
             strip=True
         )
+
+        if len(text) > MAX_SCRAPE_CHARS:
+            text = (
+                text[:MAX_SCRAPE_CHARS]
+                + "\n\n[Content truncated to stay within model token limits.]"
+            )
 
         return text
 

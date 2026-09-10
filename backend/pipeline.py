@@ -25,7 +25,7 @@ def run_research_pipeline(topic: str) -> dict:
     search_agent = build_search_agent()
 
     # Small delay before the Mistral request
-    time.sleep(10)
+    time.sleep(20)
 
     search_result = search_agent.invoke({
         "messages": [
@@ -93,8 +93,17 @@ def run_research_pipeline(topic: str) -> dict:
         f"{state['scraped_content']}"
     )
 
+    # Safety cap so the writer prompt stays comfortably under Groq's
+    # free-tier 8,000 TPM limit even if search_results is unusually long.
+    MAX_RESEARCH_CHARS = 20000
+    if len(research_combined) > MAX_RESEARCH_CHARS:
+        research_combined = (
+            research_combined[:MAX_RESEARCH_CHARS]
+            + "\n\n[Research content truncated to stay within model token limits.]"
+        )
+
     # Delay before Writer's Mistral request
-    time.sleep(10)
+    time.sleep(20)
 
     state["report"] = writer_chain.invoke({
         "topic": topic,

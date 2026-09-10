@@ -5,9 +5,14 @@ import fitz
 
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
-from langchain_mistralai import MistralAIEmbeddings, ChatMistralAI
+from langchain_mistralai import MistralAIEmbeddings
+from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from dotenv import load_dotenv
+load_dotenv()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -293,11 +298,11 @@ def generate_full_document_summary(
     if len(full_context) > max_characters:
         full_context = full_context[:max_characters]
 
-    llm = ChatMistralAI(
-        model="mistral-small-latest",
+    llm = ChatGroq(
+        model="openai/gpt-oss-120b",
+        api_key=GROQ_API_KEY,
         temperature=0,
-        timeout=120,
-        max_retries=0
+        max_retries=2
     )
 
     prompt = f"""
@@ -387,11 +392,11 @@ def answer_individual_question(question, document_id):
         ]
     )
 
-    llm = ChatMistralAI(
-        model="mistral-small-latest",
+    llm = ChatGroq(
+        model="openai/gpt-oss-120b",
+        api_key=GROQ_API_KEY,
         temperature=0,
-        timeout=120,
-        max_retries=0
+        max_retries=2
     )
 
     prompt = f"""
