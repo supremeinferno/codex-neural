@@ -39,6 +39,8 @@ SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "
 LOGIN_ATTEMPT_WINDOW_SECONDS = int(os.getenv("LOGIN_ATTEMPT_WINDOW_SECONDS", "900"))
 MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
 
+DEFAULT_ROLE = "user"
+ADMIN_ROLE = "admin"
 ADMIN_EMAILS = {
     email.strip().lower()
     for email in (
@@ -49,6 +51,17 @@ ADMIN_EMAILS = {
         .split(",")
     )
     if email.strip()
+}
+
+ROLE_PERMISSIONS = {
+    DEFAULT_ROLE: {
+        "research",
+        "document_chat",
+        "document_upload",
+    },
+    ADMIN_ROLE: {
+        "*",
+    },
 }
 
 password_hasher = PasswordHasher()
@@ -77,7 +90,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
+            password TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user'
         )
         """
     )
@@ -161,24 +175,43 @@ def verify_password(password, stored_hash):
 # REGISTER
 # =========================================================
 
-def register_user(email, password):
+def normalize_role(role):
+
+    if not role:
+        return DEFAULT_ROLE
+
+    normalized = role.strip().lower()
+
+    if normalized not in {DEFAULT_ROLE, ADMIN_ROLE}:
+        return None
+
+    return normalized
+
+
+def register_user(email, password, role=None):
 
     email = email.strip().lower()
 
     if not email or not password:
         return False, "Email and password are required."
 
+    normalized_role = normalize_role(role)
+
+    if normalized_role is None:
+        return False, "Invalid role. Supported roles are 'user' and 'admin'."
+
     conn = get_connection()
 
     try:
         conn.execute(
             """
-            INSERT INTO users (email, password)
-            VALUES (?, ?)
+            INSERT INTO users (email, password, role)
+            VALUES (?, ?, ?)
             """,
             (
                 email,
                 hash_password(password),
+                normalized_role,
             ),
         )
 
@@ -205,7 +238,7 @@ def authenticate_user(email, password):
 
     user = conn.execute(
         """
-        SELECT id, email, password
+        SELECT id, email, password, role
         FROM users
         WHERE email = ?
         """,
@@ -244,6 +277,7 @@ def authenticate_user(email, password):
     return {
         "id": user["id"],
         "email": user["email"],
+        "role": user["role"] or DEFAULT_ROLE,
     }
 
 
@@ -340,6 +374,40 @@ def get_session(session_id):
     }
 
 
+def get_user_role(user_id):
+
+    conn = get_connection()
+
+    try:
+        row = conn.execute(
+            """
+            SELECT role
+            FROM users
+            WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return DEFAULT_ROLE
+
+    stored_role = row["role"] or DEFAULT_ROLE
+
+    return stored_role.strip().lower() if stored_role else DEFAULT_ROLE
+
+
+def get_user_permissions(user_id):
+
+    role = get_user_role(user_id)
+
+    if role in ROLE_PERMISSIONS:
+        return set(ROLE_PERMISSIONS[role])
+
+    return set()
+
+
 def verify_session(request: Request):
 
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
@@ -351,24 +419,67 @@ def verify_session(request: Request):
             detail="Authentication required.",
         )
 
+    session["role"] = get_user_role(session["id"])
+    session["permissions"] = get_user_permissions(session["id"])
+
     return session
 
 
-def is_admin_session(session):
+def require_permissions(*required_permissions):
 
-    if not session:
-        return False
+    required = {
+        permission.strip().lower()
+        for permission in required_permissions
+        if permission and permission.strip()
+    }
 
-    return session.get("email", "").strip().lower() in ADMIN_EMAILS
+    def dependency(session: dict = Depends(verify_session)):
+
+        if not required:
+            return session
+
+        if session.get("permissions") is None:
+            session["permissions"] = get_user_permissions(session["id"])
+
+        if "*" in session["permissions"]:
+            return session
+
+        missing = [permission for permission in required if permission not in session["permissions"]]
+
+        if missing:
+            raise HTTPException(
+                status_code=403,
+                detail="Insufficient permissions.",
+            )
+
+        return session
+
+    return dependency
 
 
-def verify_admin(session: dict = Depends(verify_session)):
+def require_roles(*allowed_roles):
 
-    if not is_admin_session(session):
-        raise HTTPException(
-            status_code=403,
-            detail="Administrator access required.",
-        )
+    allowed = {role.strip().lower() for role in allowed_roles if role.strip()}
+
+    def dependency(session: dict = Depends(verify_session)):
+
+        if not allowed:
+            return session
+
+        current_role = (session.get("role") or DEFAULT_ROLE).strip().lower()
+
+        if current_role not in allowed:
+            raise HTTPException(
+                status_code=403,
+                detail="Insufficient permissions.",
+            )
+
+        return session
+
+    return dependency
+
+
+def verify_admin(session: dict = Depends(require_roles(ADMIN_ROLE))):
 
     return session
 

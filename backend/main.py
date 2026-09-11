@@ -36,6 +36,8 @@ from backend.auth import (
     record_event,
     verify_session,
     verify_admin,
+    require_permissions,
+    ADMIN_EMAILS,
     SESSION_COOKIE_NAME,
     SESSION_COOKIE_SECURE,
     SESSION_TTL_SECONDS,
@@ -416,6 +418,28 @@ def initialize_admin_database():
                 (datetime.now().isoformat(sep=" ", timespec="seconds"),),
             )
 
+        # Add role if old database doesn't have it
+        if "role" not in columns:
+
+            cursor.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN role TEXT NOT NULL DEFAULT 'user'
+                """
+            )
+
+            cursor.execute(
+                """
+                UPDATE users
+                SET role = 'admin'
+                WHERE email IN (?, ?)
+                """,
+                (
+                    "codexproject9@gmail.com",
+                    "admin@localhost",
+                ),
+            )
+
     # -----------------------------------------------------
     # Login activity table
     # -----------------------------------------------------
@@ -516,7 +540,8 @@ def register(request: AuthRequest):
 
     success, message = register_user(
         request.email,
-        request.password
+        request.password,
+        role="user",
     )
 
     if success:
@@ -852,7 +877,7 @@ def reset_password_endpoint(
 @app.post("/api/research")
 def research(
     request: ResearchRequest,
-    session: dict = Depends(verify_session),
+    session: dict = Depends(require_permissions("research")),
 ):
 
     record_event(
@@ -879,7 +904,7 @@ def research(
 @app.post("/api/individual/upload")
 async def upload_individual_pdf(
     file: UploadFile = File(...),
-    session: dict = Depends(verify_session),
+    session: dict = Depends(require_permissions("document_upload")),
 ):
 
     if (
@@ -920,7 +945,7 @@ async def upload_individual_pdf(
 @app.post("/api/individual/chat")
 def individual_chat(
     request: IndividualQuestionRequest,
-    session: dict = Depends(verify_session),
+    session: dict = Depends(require_permissions("document_chat")),
 ):
 
     if not request.question.strip():
@@ -997,6 +1022,7 @@ def admin_dashboard(session: dict = Depends(verify_admin)):
         SELECT
             id,
             email,
+            role,
             created_at
         FROM users
         ORDER BY id DESC
@@ -1010,6 +1036,7 @@ def admin_dashboard(session: dict = Depends(verify_admin)):
         users.append({
             "id": row["id"],
             "email": row["email"],
+            "role": row["role"] or "user",
             "created_at": row["created_at"],
         })
 
@@ -1140,7 +1167,7 @@ def admin_delete_user(
     # NEVER DELETE ADMIN
     # -----------------------------------------------------
 
-    if target["email"].strip().lower() == ADMIN_EMAIL.lower():
+    if (target["email"].strip().lower() in ADMIN_EMAILS or (target.get("role") or "user").strip().lower() == "admin"):
 
         conn.close()
 
