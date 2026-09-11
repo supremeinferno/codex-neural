@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Response, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -28,6 +28,7 @@ from backend.auth import (
     is_login_attempt_allowed,
     record_failed_login,
     clear_login_attempts,
+    record_event,
     SESSION_COOKIE_NAME,
     SESSION_COOKIE_SECURE,
     SESSION_TTL_SECONDS,
@@ -65,6 +66,7 @@ RATE_LIMIT_EXCLUDED_PATHS = {
     "/api/session",
 }
 REQUEST_BUCKETS = {}
+RATE_LIMIT_WARMUP_BUCKETS = {}
 
 
 # =========================================================
@@ -109,6 +111,17 @@ async def rate_limit_middleware(request: Request, call_next):
     ]
 
     if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        record_event(
+            event_type="rate_limit_hit",
+            path=path,
+            details={
+                "ip_address": client_ip,
+                "window_seconds": RATE_LIMIT_WINDOW_SECONDS,
+                "max_requests": RATE_LIMIT_MAX_REQUESTS,
+            },
+            ip_address=client_ip,
+        )
+
         return JSONResponse(
             status_code=429,
             content={
@@ -365,12 +378,35 @@ def login(
 
         record_failed_login(client_ip, request.email)
 
+        record_event(
+            event_type="login_failed",
+            path="/api/login",
+            details={
+                "email": request.email.strip().lower(),
+                "ip_address": client_ip,
+            },
+            email=request.email.strip().lower(),
+            ip_address=client_ip,
+        )
+
         return {
             "success": False,
             "message": "Invalid email or password."
         }
 
     clear_login_attempts(client_ip, request.email)
+
+    record_event(
+        event_type="login_success",
+        path="/api/login",
+        details={
+            "email": request.email.strip().lower(),
+            "ip_address": client_ip,
+        },
+        user_id=user["id"],
+        email=user["email"],
+        ip_address=client_ip,
+    )
 
     session_id, expires_at = create_session(
         user["id"],
@@ -477,12 +513,24 @@ def session_endpoint(request: Request):
 def logout(request: Request, response: Response):
 
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    session = get_session(session_id)
 
     invalidate_session(session_id)
 
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         path="/",
+    )
+
+    record_event(
+        event_type="logout",
+        path="/api/logout",
+        details={
+            "session_invalidated": bool(session),
+        },
+        user_id=session["id"] if session else None,
+        email=session["email"] if session else None,
+        ip_address=request.client.host if request.client else None,
     )
 
     return {
@@ -497,11 +545,24 @@ def logout(request: Request, response: Response):
 
 @app.post("/api/forgot-password")
 def forgot_password(
-    request: ForgotPasswordRequest
+    request: ForgotPasswordRequest,
+    request_obj: Request,
 ):
 
     success, message = request_password_reset(
         request.email
+    )
+
+    record_event(
+        event_type="password_reset_requested",
+        path="/api/forgot-password",
+        details={
+            "requested_email": request.email.strip().lower(),
+            "success": success,
+            "message": message,
+        },
+        email=request.email.strip().lower(),
+        ip_address=request_obj.client.host if request_obj.client else None,
     )
 
     return {
@@ -516,12 +577,25 @@ def forgot_password(
 
 @app.post("/api/verify-otp")
 def verify_otp_endpoint(
-    request: VerifyOTPRequest
+    request: VerifyOTPRequest,
+    request_obj: Request,
 ):
 
     success, message = verify_otp(
         request.email,
         request.otp
+    )
+
+    record_event(
+        event_type="otp_verified",
+        path="/api/verify-otp",
+        details={
+            "requested_email": request.email.strip().lower(),
+            "success": success,
+            "message": message,
+        },
+        email=request.email.strip().lower(),
+        ip_address=request_obj.client.host if request_obj.client else None,
     )
 
     return {
@@ -536,13 +610,26 @@ def verify_otp_endpoint(
 
 @app.post("/api/reset-password")
 def reset_password_endpoint(
-    request: ResetPasswordRequest
+    request: ResetPasswordRequest,
+    request_obj: Request,
 ):
 
     success, message = reset_password(
         request.email,
         request.otp,
         request.new_password
+    )
+
+    record_event(
+        event_type="password_reset_completed",
+        path="/api/reset-password",
+        details={
+            "requested_email": request.email.strip().lower(),
+            "success": success,
+            "message": message,
+        },
+        email=request.email.strip().lower(),
+        ip_address=request_obj.client.host if request_obj.client else None,
     )
 
     return {
@@ -552,13 +639,55 @@ def reset_password_endpoint(
 
 
 # =========================================================
+# AUTH DEPENDENCIES
+# =========================================================
+
+def verify_session(request: Request):
+
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    session = get_session(session_id)
+
+    if not session:
+
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required."
+        )
+
+    return session
+
+
+def verify_admin(session: dict = Depends(verify_session)):
+
+    if session["email"].strip().lower() != ADMIN_EMAIL.lower():
+
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator access required."
+        )
+
+    return session
+
+
+# =========================================================
 # NEXUS RESEARCH
 # =========================================================
 
 @app.post("/api/research")
 def research(
-    request: ResearchRequest
+    request: ResearchRequest,
+    session: dict = Depends(verify_session),
 ):
+
+    record_event(
+        event_type="research_requested",
+        path="/api/research",
+        details={
+            "topic": request.topic[:500],
+        },
+        user_id=session["id"],
+        email=session["email"],
+    )
 
     result = run_research_pipeline(
         request.topic
@@ -573,7 +702,8 @@ def research(
 
 @app.post("/api/individual/upload")
 async def upload_individual_pdf(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    session: dict = Depends(verify_session),
 ):
 
     if (
@@ -587,6 +717,17 @@ async def upload_individual_pdf(
         }
 
     pdf_bytes = await file.read()
+
+    record_event(
+        event_type="pdf_upload",
+        path="/api/individual/upload",
+        details={
+            "filename": file.filename,
+            "size_bytes": len(pdf_bytes),
+        },
+        user_id=session["id"],
+        email=session["email"],
+    )
 
     result = build_individual_index(
         pdf_bytes,
@@ -602,7 +743,8 @@ async def upload_individual_pdf(
 
 @app.post("/api/individual/chat")
 def individual_chat(
-    request: IndividualQuestionRequest
+    request: IndividualQuestionRequest,
+    session: dict = Depends(verify_session),
 ):
 
     if not request.question.strip():
@@ -611,6 +753,17 @@ def individual_chat(
             "success": False,
             "message": "Please enter a question."
         }
+
+    record_event(
+        event_type="document_chat",
+        path="/api/individual/chat",
+        details={
+            "document_id": request.document_id,
+            "question_length": len(request.question.strip()),
+        },
+        user_id=session["id"],
+        email=session["email"],
+    )
 
     result = answer_individual_question(
         request.question,
@@ -621,34 +774,11 @@ def individual_chat(
 
 
 # =========================================================
-# ADMIN AUTHORIZATION
-# =========================================================
-
-def verify_admin(email: str):
-
-    if not email:
-
-        raise HTTPException(
-            status_code=401,
-            detail="Administrator email is required."
-        )
-
-    if email.strip().lower() != ADMIN_EMAIL.lower():
-
-        raise HTTPException(
-            status_code=403,
-            detail="Administrator access required."
-        )
-
-
-# =========================================================
 # ADMIN DASHBOARD
 # =========================================================
 
 @app.get("/api/admin/dashboard")
-def admin_dashboard(email: str):
-
-    verify_admin(email)
+def admin_dashboard(session: dict = Depends(verify_admin)):
 
     # Make sure old DB is repaired
     initialize_admin_database()
@@ -735,6 +865,42 @@ def admin_dashboard(email: str):
             "login_time": row["login_time"],
         })
 
+    # -----------------------------------------------------
+    # RECENT SECURITY EVENTS
+    # -----------------------------------------------------
+
+    cursor.execute(
+        """
+        SELECT
+            id,
+            event_type,
+            user_id,
+            email,
+            ip_address,
+            path,
+            details,
+            occurred_at
+        FROM events
+        ORDER BY id DESC
+        LIMIT 100
+        """
+    )
+
+    recent_events = []
+
+    for row in cursor.fetchall():
+
+        recent_events.append({
+            "id": row["id"],
+            "event_type": row["event_type"],
+            "user_id": row["user_id"],
+            "email": row["email"],
+            "ip_address": row["ip_address"],
+            "path": row["path"],
+            "details": row["details"],
+            "occurred_at": row["occurred_at"],
+        })
+
     conn.close()
 
     return {
@@ -743,6 +909,7 @@ def admin_dashboard(email: str):
         "total_logins": total_logins,
         "users": users,
         "recent_logins": recent_logins,
+        "recent_events": recent_events,
     }
 
 
@@ -753,10 +920,18 @@ def admin_dashboard(email: str):
 @app.delete("/api/admin/users/{user_id}")
 def admin_delete_user(
     user_id: int,
-    email: str
+    session: dict = Depends(verify_admin)
 ):
 
-    verify_admin(email)
+    record_event(
+        event_type="admin_user_deleted",
+        path=f"/api/admin/users/{user_id}",
+        details={
+            "deleted_user_id": user_id,
+        },
+        user_id=session["id"],
+        email=session["email"],
+    )
 
     conn = get_db()
     cursor = conn.cursor()
@@ -840,10 +1015,18 @@ def admin_delete_user(
 @app.delete("/api/admin/logins/{activity_id}")
 def admin_delete_login(
     activity_id: int,
-    email: str
+    session: dict = Depends(verify_admin)
 ):
 
-    verify_admin(email)
+    record_event(
+        event_type="admin_login_record_deleted",
+        path=f"/api/admin/logins/{activity_id}",
+        details={
+            "deleted_activity_id": activity_id,
+        },
+        user_id=session["id"],
+        email=session["email"],
+    )
 
     conn = get_db()
     cursor = conn.cursor()
@@ -882,10 +1065,15 @@ def admin_delete_login(
 
 @app.delete("/api/admin/logins")
 def admin_clear_logins(
-    email: str
+    session: dict = Depends(verify_admin)
 ):
 
-    verify_admin(email)
+    record_event(
+        event_type="admin_login_history_cleared",
+        path="/api/admin/logins",
+        user_id=session["id"],
+        email=session["email"],
+    )
 
     conn = get_db()
     cursor = conn.cursor()

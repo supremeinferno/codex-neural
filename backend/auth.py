@@ -3,6 +3,7 @@ import hashlib
 import secrets
 import time
 import smtplib
+import json
 
 from pathlib import Path
 from email.message import EmailMessage
@@ -88,6 +89,22 @@ def init_db():
             created_at REAL NOT NULL,
             expires_at REAL NOT NULL,
             last_seen REAL NOT NULL
+        )
+        """
+    )
+
+    # Security event log for tracking incidents and audit actions
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            user_id INTEGER,
+            email TEXT,
+            ip_address TEXT,
+            path TEXT,
+            details TEXT,
+            occurred_at REAL NOT NULL
         )
         """
     )
@@ -353,6 +370,80 @@ def record_failed_login(ip_address, email):
 def clear_login_attempts(ip_address, email):
     key = get_login_attempt_key(ip_address, email)
     FAILED_LOGIN_ATTEMPTS.pop(key, None)
+
+
+# =========================================================
+# EVENT TRACKING
+# =========================================================
+
+def record_event(
+    event_type,
+    path=None,
+    details=None,
+    user_id=None,
+    email=None,
+    ip_address=None,
+):
+
+    conn = get_connection()
+
+    try:
+        conn.execute(
+            """
+            INSERT INTO events (
+                event_type,
+                user_id,
+                email,
+                ip_address,
+                path,
+                details,
+                occurred_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_type,
+                user_id,
+                email,
+                ip_address,
+                path,
+                json.dumps(details, default=str)
+                if details is not None
+                else None,
+                time.time(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_recent_events(limit=100):
+
+    conn = get_connection()
+
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                id,
+                event_type,
+                user_id,
+                email,
+                ip_address,
+                path,
+                details,
+                occurred_at
+            FROM events
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    return [dict(row) for row in rows]
 
 
 # =========================================================
