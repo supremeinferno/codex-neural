@@ -1,8 +1,8 @@
 # Security Overview
 
-This document summarizes the security controls currently implemented in this repository as of September 2026.
+This document summarizes the security posture of the repository as of September 2026 and reflects the work completed during the recent auth, rate-limiting, and auditing improvements.
 
-It is intended to provide a clear snapshot of what is already built, what is partially implemented, and what still needs to be added before the application is considered production-grade.
+It is intended to capture the current implemented controls, what has changed recently, and which issues still remain before the project can be considered production-grade.
 
 ## Current Security Features
 
@@ -12,224 +12,259 @@ Implemented in `backend/auth.py`.
 
 Current controls:
 - Passwords are hashed with Argon2 via `argon2-cffi`.
-- Existing legacy SHA-256 hashes are detected and upgraded to Argon2 on the next successful login.
-- Password verification uses constant-time comparison logic where applicable.
+- Existing legacy SHA-256 hashes are detected and upgraded on the next successful login.
+- Password verification uses Argon2 verification with safe error handling and legacy fallback support.
 
 Benefits:
-- Stronger password hashing than unsalted or weak SHA-256-only storage.
-- Allows migration from older stored hashes without forcing a password reset.
+- Stronger password storage than weak SHA-256-only hashing.
+- Safe migration path for older users without forcing an immediate password reset.
 
-### 2. Server-side sessions with cookie-based persistence
+### 2. Server-side sessions with HttpOnly cookie persistence
 
 Implemented in `backend/auth.py` and `backend/main.py`.
 
 Current controls:
-- Server-side session records are stored in SQLite in a `sessions` table.
-- A session ID is issued on login and stored in an `httponly` cookie.
-- Session expiration is enforced using server-side `expires_at` timestamps.
-- Session invalidation is supported via logout and session cleanup.
-- Frontend session restoration is handled by calling `/api/session` on load.
+- The backend creates server-side session records in SQLite.
+- Session IDs are stored in an `HttpOnly` cookie for browser persistence.
+- Session expiration is enforced server-side with `expires_at` timestamps.
+- Sessions can be invalidated and cleaned up through logout or expiry.
+- Frontend session restoration is handled via `/api/session`.
 
 Benefits:
-- Session state is not stored only in browser localStorage.
-- Server-side session validation allows revocation and expiry management.
+- Session state is managed server-side rather than relying only on browser-held values.
+- Sessions can be revoked immediately when required.
 
-### 3. Login rate limiting / brute-force protection
+### 3. Centralized authentication and authorization
+
+Implemented in `backend/auth.py` and enforced in `backend/main.py`.
+
+Current controls:
+- `verify_session` is used as the shared authentication dependency.
+- `require_permissions(...)` provides reusable permission checks for protected routes.
+- `verify_admin` now delegates through the centralized role/permission layer.
+- The session object now includes both `role` and resolved `permissions`.
+
+Benefits:
+- Authorization is no longer spread across ad hoc route checks.
+- Routes can be protected consistently through a shared dependency layer.
+
+### 4. Role and permission model
+
+Implemented in `backend/auth.py` and `backend/main.py`.
+
+Current controls:
+- Users now have a stored `role` field in the `users` table.
+- The app supports a simple `user` / `admin` model with a permission map.
+- Default permissions currently include:
+  - `research`
+  - `document_chat`
+  - `document_upload`
+- `admin` receives wildcard access via `*`.
+
+Benefits:
+- The application is no longer limited to a single hardcoded admin email check.
+- Authorization can be broadened from a simple admin gate into a permission-based system.
+
+### 5. Login throttling and request rate limiting
 
 Implemented in `backend/auth.py` and `backend/main.py`.
 
 Current controls:
 - Failed login attempts are tracked per IP address and email.
-- Login attempts are blocked after a configurable threshold is reached within a configurable time window.
-- A clear retry message is returned when a client is rate limited.
-- The backend now includes an HTTP middleware rate limiter for general request throttling.
+- Login attempts are throttled after a configured threshold is reached.
+- Request rate limiting is applied through an HTTP middleware.
+- Rate limiting now supports multiple algorithms through configuration:
+  - `sliding_window` (default)
+  - `fixed_window`
+  - `token_bucket`
+- The limiter is Redis-ready and will use Redis if available.
+- If Redis is unavailable, the backend falls back to in-memory rate limiting.
 
-Current configuration:
+Current configuration examples:
 - `LOGIN_ATTEMPT_WINDOW_SECONDS` defaults to `900`
 - `MAX_LOGIN_ATTEMPTS` defaults to `5`
 - `RATE_LIMIT_WINDOW_SECONDS` defaults to `60`
 - `RATE_LIMIT_MAX_REQUESTS` defaults to `120`
+- `RATE_LIMIT_ALGORITHM` defaults to `sliding_window`
+- `RATE_LIMIT_USE_REDIS` defaults to `true`
+- `REDIS_URL` defaults to `redis://localhost:6379/0`
 
 Benefits:
-- Reduces exposure to brute-force password attacks and noisy request floods.
-- Provides a basic layer of abuse mitigation.
+- Reduces exposure to brute-force attacks and noisy request floods.
+- Provides an upgrade path to a distributed production limiter.
 
-Notes:
-- The current limiter is in-memory and local to the running process.
-- It is useful for development and basic protection, but not sufficient for multi-instance production deployments.
-
-### 4. Logout and session invalidation
+### 6. Logout and session invalidation
 
 Implemented in `backend/main.py`.
 
 Current controls:
 - `POST /api/logout` invalidates the server-side session.
 - The client cookie is removed with `delete_cookie`.
-- Frontend logout clears local UI state after the server response.
+- Frontend logout now clears local UI state after the server response.
 
 Benefits:
 - Users can actively terminate sessions.
-- Invalidation is supported on the server side, which is important for security and account hygiene.
+- Session revocation is enforced on the server side.
 
-### 5. CORS hardening
-
-Implemented in `backend/main.py`.
-
-Current controls:
-- CORS is no longer fully open.
-- Allowed origins are loaded from `FRONTEND_ORIGINS` environment configuration.
-- `allow_credentials=True` is preserved only for the configured origins.
-
-Benefits:
-- Reduces the chance of cross-origin misuse compared to wildcard `*` origins.
-
-### 6. OTP-based password reset flow
+### 7. OTP-based password reset flow
 
 Implemented in `backend/auth.py` and exposed through `backend/main.py`.
 
 Current controls:
-- Password reset requests generate temporary OTPs.
-- OTPs expire after a fixed interval.
-- OTPs are stored server-side and checked before allowing a password reset.
-- Email sending is performed through SMTP.
+- Password reset requests generate time-limited OTPs.
+- OTPs are validated before allowing a password reset.
+- OTPs are stored server-side and removed on successful completion.
+- Password reset emails are sent through SMTP credentials from environment configuration.
 
 Benefits:
-- Provides an additional recovery mechanism beyond direct password changes.
+- Improves user recovery options while keeping verification in the backend.
 
-### 7. Basic audit logging for login activity
+### 8. Audit/event logging
 
-Implemented in `backend/main.py` and `backend/auth.py`.
+Implemented in `backend/auth.py` and `backend/main.py`.
 
 Current controls:
-- Successful logins insert a record into the `login_activity` table.
-- Admin dashboard endpoints expose recent login records and user totals.
+- Security and operational events are stored in the `events` table.
+- The logger records events such as:
+  - login success / failure
+  - logout
+  - password reset requests and resets
+  - OTP verification
+  - rate-limit hits
+  - admin operations such as user deletion and login-history cleanup
+- Admin dashboard responses now include recent events in addition to login activity.
 
 Benefits:
-- Provides a basic audit trail for login events.
+- Improves visibility for incident review and security investigation.
+- Provides an audit trail beyond basic login history.
 
-### 8. Auth-aware frontend state management
+### 9. Auth-aware frontend state management
 
-Implemented in `frontend/src/App.jsx`.
+Implemented in `frontend/src/App.jsx` and related frontend files.
 
 Current controls:
-- Frontend now restores auth state via `/api/session`.
-- Session-backed requests send `credentials: "include"`.
-- The UI now uses the server session instead of raw localStorage persistence for login state.
+- Frontend restores auth state through `/api/session`.
+- Requests now send `credentials: "include"` where necessary.
+- UI state is aligned with server-side session validity.
 
 Benefits:
-- Helps align frontend behavior with server-side session validity.
+- Reduces reliance on insecure client-only session assumptions.
+- Better aligns frontend behavior with backend session verification.
+
+### 10. CORS hardening
+
+Implemented in `backend/main.py`.
+
+Current controls:
+- Allowed origins are loaded from `FRONTEND_ORIGINS` env configuration.
+- `allow_credentials=True` is preserved only for configured origins.
+
+Benefits:
+- Avoids fully open cross-origin access.
+
+## Recent Untracked / Completed Changes
+
+The following work was completed recently and should be treated as part of the current security baseline:
+
+- Centralized authentication and admin checking into shared auth dependencies.
+- Added role and permission support to the backend.
+- Added Redis-ready request rate limiting with algorithm selection and fallback behavior.
+- Expanded event logging beyond login records.
+- Updated the admin dashboard to expose role and event information.
+- Added migration logic for legacy users and legacy admin email fallback handling.
 
 ## Current Limitations / Gaps
 
-The following important gaps still remain and should be treated as known limitations.
+The following areas still require attention before this can be treated as fully production-grade.
 
-### 1. Centralized auth enforcement is not fully implemented
-
-Current state:
-- Sessions are created and restored.
-- Some routes still rely on manual checks or client-provided values rather than a single centralized auth dependency.
-
-Remaining issue:
-- Sensitive endpoints should be protected by one shared auth guard / dependency layer, rather than ad hoc logic.
-
-### 2. Admin authorization is still weak
+### 1. Roles are still a simple model
 
 Current state:
-- The admin check in `backend/main.py` is still based on comparing the user email to a configured admin email.
+- The system supports `user` and `admin`, plus a static permission map.
 
 Remaining issue:
-- This is not a real role-based authorization model.
-- Production systems should use explicit roles/permissions and protected route dependencies.
+- Permissions are still coded centrally and not yet fully admin-manageable from the database or dashboard.
+- A more mature RBAC design would use a dedicated permission or role-assignment table.
 
-### 3. Event and incident tracking is still limited
+### 2. Admin fallback still exists for older accounts
 
 Current state:
-- The application records login events in `login_activity`.
-- There is no comprehensive event bus, audit trail, or incident tracking for actions such as:
-  - password reset requests
-  - failed password reset attempts
-  - PDF uploads
-  - research requests
-  - admin account changes
-  - suspicious rate-limit events
+- Older users can still be recognized through the configured admin email allowlist during migration.
 
 Remaining issue:
-- Event tracking needs to expand beyond simple login history to support operational monitoring and security investigations.
+- This should eventually be fully replaced by persisted role data for all users.
 
-### 4. Rate limiting is still in-memory
+### 3. Redis is required for true shared rate limiting
 
 Current state:
-- Request throttling is implemented in-process.
+- The limiter is Redis-capable and will fall back to memory if Redis is unavailable.
 
 Remaining issue:
-- This is not suitable for multi-instance production deployment.
-- A distributed rate-limiter (for example Redis-backed) is recommended for scale-out and reliability.
+- In production, Redis should be running and reachable for multi-instance consistency.
+- Memory fallback is only suitable for development or single-instance deployments.
 
-### 5. Scraping and URL-fetching are still high-risk areas
-
-Current state:
-- The research pipeline and scraping tools can fetch external URLs.
-
-Remaining issue:
-- This exposes the system to SSRF and abuse risks unless strict domain allowlists, URL validation, and network controls are added.
-
-### 6. Upload handling needs production hardening
+### 4. Upload handling needs stronger hardening
 
 Current state:
 - PDF uploads are accepted and indexed.
 
 Remaining issue:
-- There are no strong upload size limits, malware scanning, MIME validation, or resource caps yet.
+- There is no strong file-size cap, malware scan, content-type validation, or resource limit enforcement yet.
 
-### 7. Security observability still needs to improve
+### 5. SSRF / safe-fetch protections are still incomplete
 
 Current state:
-- Basic login activity is stored.
+- The research pipeline can fetch external URLs.
 
 Remaining issue:
-- The project does not yet have structured, centralized incident/event logging, alerting, or a first-class monitoring pipeline.
+- Domain allowlisting, URL validation, and safer network controls are still required to reduce SSRF and external abuse risk.
+
+### 6. Observability is still basic
+
+Current state:
+- Events are stored and visible from the admin dashboard.
+
+Remaining issue:
+- There is still no dedicated alerting, metrics pipeline, or richer incident investigation system.
+
+### 7. Code organization remains large
+
+Current state:
+- The auth and main backend files have grown significantly.
+
+Remaining issue:
+- The project would benefit from splitting auth, session management, rate limiting, and event logging into separate modules or services.
 
 ## Recommended Next Security Priorities
 
-### Priority 1: Central auth enforcement
-- Add a shared dependency for authenticated requests.
-- Enforce auth consistently for all protected endpoints.
-- Move toward explicit role checks for admin-only operations.
+### Priority 1: Harden the role and permission model
+- Add persistent role and permission management in the database.
+- Allow admin-driven assignment of permissions or roles.
+- Remove the remaining email-based fallback after migration is complete.
 
-### Priority 2: Production-grade rate limiting
-- Replace in-memory limiter with Redis-backed rate limiting.
-- Add endpoint-specific limits for login, password reset, PDF upload, and research requests.
-- Apply stronger throttling rules per IP and per user account.
+### Priority 2: Deploy and validate Redis-backed rate limiting
+- Run Redis in the deployment environment.
+- Validate the shared limiter across multiple app instances.
+- Tune rate limits per endpoint and per client class.
 
-### Priority 3: Event and incident tracking
-- Implement a structured event log for:
-  - authentication attempts
-  - password reset actions
-  - PDF upload activity
-  - admin actions
-  - rate-limit violations
-  - suspicious request patterns
-- Make the event store queryable for investigation and alerting.
+### Priority 3: Strengthen uploads and external fetch safety
+- Add upload size limits and content validation.
+- Introduce SSRF-safe URL restrictions and allowlists.
+- Consider document scanning or content inspection where appropriate.
 
-### Priority 4: Hardening for scraping and uploads
-- Add URL allowlisting and safe-fetch logic.
-- Add file upload size and content validation.
-- Introduce resource limits and malicious-content checks for documents.
+### Priority 4: Expand monitoring and incident response
+- Add structured alerting for repeated failures and suspicious patterns.
+- Track more security-related actions in a queryable, operationally useful way.
+- Improve dashboard visibility and audit drill-down capabilities.
 
 ## Summary
 
-The repository already includes several useful security foundations:
+The repository now includes a much stronger baseline than it had at the start of the project:
 - Argon2 password hashing
 - server-side session management
-- cookie-based persistence
-- login throttling
-- logout/invalidation support
-- CORS tightening
-- OTP-based password recovery
-- basic login auditing
+- centralized auth and authorization checks
+- role and permission support
+- Redis-ready rate limiting with multiple algorithms
+- expanded audit/event logging
+- improved frontend session handling
 
-However, it is not yet a fully production-grade secure application. The biggest remaining work is around:
-- centralized auth enforcement,
-- role-based authorization,
-- production-grade distributed rate limiting,
-- and broader event/incident tracking beyond login history.
