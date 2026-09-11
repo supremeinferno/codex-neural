@@ -40,5 +40,8 @@ chromadb>=1,<2
 # Terminal output
 rich>=13,<14
 
+# Redis-backed rate limiting
+redis>=5,<6
+
 langchain-groq
 groq

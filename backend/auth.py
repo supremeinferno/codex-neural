@@ -10,6 +10,8 @@ from email.message import EmailMessage
 from dotenv import load_dotenv
 import os
 
+from fastapi import Depends, HTTPException, Request
+
 from argon2 import PasswordHasher
 from argon2.exceptions import (
     InvalidHashError,
@@ -36,6 +38,18 @@ SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "
 
 LOGIN_ATTEMPT_WINDOW_SECONDS = int(os.getenv("LOGIN_ATTEMPT_WINDOW_SECONDS", "900"))
 MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
+
+ADMIN_EMAILS = {
+    email.strip().lower()
+    for email in (
+        os.getenv(
+            "ADMIN_EMAILS",
+            os.getenv("ADMIN_EMAIL", "codexproject9@gmail.com"),
+        )
+        .split(",")
+    )
+    if email.strip()
+}
 
 password_hasher = PasswordHasher()
 FAILED_LOGIN_ATTEMPTS = {}
@@ -324,6 +338,39 @@ def get_session(session_id):
         "id": user_id,
         "email": email,
     }
+
+
+def verify_session(request: Request):
+
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    session = get_session(session_id)
+
+    if not session:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required.",
+        )
+
+    return session
+
+
+def is_admin_session(session):
+
+    if not session:
+        return False
+
+    return session.get("email", "").strip().lower() in ADMIN_EMAILS
+
+
+def verify_admin(session: dict = Depends(verify_session)):
+
+    if not is_admin_session(session):
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator access required.",
+        )
+
+    return session
 
 
 # =========================================================
