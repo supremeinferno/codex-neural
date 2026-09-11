@@ -21,6 +21,9 @@ lxml>=5,<7
 # Environment variables
 python-dotenv>=1,<2
 
+# Password hashing
+argon2-cffi>=25,<26
+
 # Mistral
 langchain-mistralai==1.1.6
 mistralai>=1,<2
