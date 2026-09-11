@@ -1,9 +1,11 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import os
 import sqlite3
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -51,6 +53,18 @@ FRONTEND_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
+RATE_LIMIT_WINDOW_SECONDS = int(
+    os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60")
+)
+RATE_LIMIT_MAX_REQUESTS = int(
+    os.getenv("RATE_LIMIT_MAX_REQUESTS", "120")
+)
+RATE_LIMIT_EXCLUDED_PATHS = {
+    "/api",
+    "/api/health",
+    "/api/session",
+}
+REQUEST_BUCKETS = {}
 
 
 # =========================================================
@@ -69,6 +83,46 @@ app = FastAPI(
     description="Multi-Agent AI Research System",
     version="1.0.0",
 )
+
+
+# =========================================================
+# RATE LIMITING
+# =========================================================
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+
+    path = request.url.path
+
+    if path in RATE_LIMIT_EXCLUDED_PATHS:
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    now = time.time()
+
+    bucket = REQUEST_BUCKETS.setdefault(client_ip, [])
+
+    bucket[:] = [
+        timestamp
+        for timestamp in bucket
+        if now - timestamp < RATE_LIMIT_WINDOW_SECONDS
+    ]
+
+    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        return JSONResponse(
+            status_code=429,
+            content={
+                "success": False,
+                "message": "Too many requests. Please try again later.",
+            },
+            headers={
+                "Retry-After": str(RATE_LIMIT_WINDOW_SECONDS),
+            },
+        )
+
+    bucket.append(now)
+
+    return await call_next(request)
 
 
 # =========================================================
