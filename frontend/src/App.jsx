@@ -32,22 +32,40 @@ function App() {
 
   const [authPage, setAuthPage] = useState("login");
 
-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    try {
-      return !!localStorage.getItem("codex_user");
-    } catch {
-      return false;
-    }
-  });
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  const [user, setUser] = useState(() => {
-    try {
-      const stored = localStorage.getItem("codex_user");
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const restoreSession = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/session`, {
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          setUser(null);
+          setIsLoggedIn(false);
+          return;
+        }
+
+        const data = await response.json();
+
+        if (data.authenticated && data.user) {
+          setUser(data.user);
+          setIsLoggedIn(true);
+          return;
+        }
+      } catch (error) {
+        console.error("Session restore failed:", error);
+      }
+
+      setUser(null);
+      setIsLoggedIn(false);
+    };
+
+    restoreSession();
+  }, []);
 
 
   const handleLogin = (loggedInUser) => {
@@ -59,16 +77,19 @@ function App() {
     setAuthPage("login");
 
     setActiveTab("nexus");
-
-    try {
-      localStorage.setItem("codex_user", JSON.stringify(loggedInUser));
-    } catch (err) {
-      console.error("Failed to persist session:", err);
-    }
   };
 
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+
+    try {
+      await fetch(`${API_URL}/api/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (error) {
+      console.error("Logout request failed:", error);
+    }
 
     setUser(null);
 
@@ -83,12 +104,6 @@ function App() {
     setReport("");
 
     setError("");
-
-    try {
-      localStorage.removeItem("codex_user");
-    } catch (err) {
-      console.error("Failed to clear session:", err);
-    }
   };
 
 
@@ -237,6 +252,7 @@ function App() {
         `${API_URL}/api/research`,
         {
           method: "POST",
+          credentials: "include",
 
           headers: {
             "Content-Type": "application/json",
@@ -560,6 +576,14 @@ function App() {
         RESEARCH ENGINE ONLINE
 
       </div>
+
+      <button
+        type="button"
+        className="logout-button"
+        onClick={handleLogout}
+      >
+        LOGOUT
+      </button>
 
     </nav>
 

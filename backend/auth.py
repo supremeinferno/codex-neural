@@ -9,6 +9,13 @@ from email.message import EmailMessage
 from dotenv import load_dotenv
 import os
 
+from argon2 import PasswordHasher
+from argon2.exceptions import (
+    InvalidHashError,
+    VerifyMismatchError,
+    VerificationError,
+)
+
 
 # =========================================================
 # ENVIRONMENT
@@ -22,6 +29,16 @@ load_dotenv(BASE_DIR.parent / ".env")
 SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD")
 
+SESSION_COOKIE_NAME = "codex_session"
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "604800"))
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
+
+LOGIN_ATTEMPT_WINDOW_SECONDS = int(os.getenv("LOGIN_ATTEMPT_WINDOW_SECONDS", "900"))
+MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
+
+password_hasher = PasswordHasher()
+FAILED_LOGIN_ATTEMPTS = {}
+
 
 # =========================================================
 # DATABASE
@@ -31,7 +48,9 @@ DB_PATH = BASE_DIR / "users.db"
 
 
 def get_connection():
-    return sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 def init_db():
@@ -59,6 +78,20 @@ def init_db():
         """
     )
 
+    # Session table for server-side session persistence
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            email TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            expires_at REAL NOT NULL,
+            last_seen REAL NOT NULL
+        )
+        """
+    )
+
     conn.commit()
     conn.close()
 
@@ -68,9 +101,29 @@ def init_db():
 # =========================================================
 
 def hash_password(password):
-    return hashlib.sha256(
+    return password_hasher.hash(password)
+
+
+def verify_password(password, stored_hash):
+    if not stored_hash:
+        return False
+
+    if stored_hash.startswith("$argon2"):
+        try:
+            password_hasher.verify(stored_hash, password)
+            return True
+        except (
+            VerifyMismatchError,
+            InvalidHashError,
+            VerificationError,
+        ):
+            return False
+
+    legacy_hash = hashlib.sha256(
         password.encode("utf-8")
     ).hexdigest()
+
+    return secrets.compare_digest(legacy_hash, stored_hash)
 
 
 # =========================================================
@@ -121,26 +174,185 @@ def authenticate_user(email, password):
 
     user = conn.execute(
         """
-        SELECT id, email
+        SELECT id, email, password
         FROM users
         WHERE email = ?
-        AND password = ?
         """,
-        (
-            email,
-            hash_password(password),
-        ),
+        (email,),
     ).fetchone()
 
     conn.close()
 
-    if user:
-        return {
-            "id": user[0],
-            "email": user[1],
-        }
+    if not user:
+        return None
 
-    return None
+    stored_hash = user["password"]
+
+    if not verify_password(password, stored_hash):
+        return None
+
+    if not stored_hash.startswith("$argon2"):
+        conn = get_connection()
+
+        try:
+            conn.execute(
+                """
+                UPDATE users
+                SET password = ?
+                WHERE id = ?
+                """,
+                (
+                    hash_password(password),
+                    user["id"],
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    return {
+        "id": user["id"],
+        "email": user["email"],
+    }
+
+
+# =========================================================
+# SESSION MANAGEMENT
+# =========================================================
+
+def create_session(user_id, email):
+    session_id = secrets.token_urlsafe(32)
+    now = time.time()
+    expires_at = now + SESSION_TTL_SECONDS
+
+    conn = get_connection()
+
+    try:
+        conn.execute(
+            """
+            INSERT INTO sessions (
+                session_id,
+                user_id,
+                email,
+                created_at,
+                expires_at,
+                last_seen
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                user_id,
+                email,
+                now,
+                expires_at,
+                now,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return session_id, expires_at
+
+
+def invalidate_session(session_id):
+    if not session_id:
+        return
+
+    conn = get_connection()
+
+    try:
+        conn.execute(
+            """
+            DELETE FROM sessions
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_session(session_id):
+    if not session_id:
+        return None
+
+    conn = get_connection()
+
+    row = conn.execute(
+        """
+        SELECT user_id, email, expires_at
+        FROM sessions
+        WHERE session_id = ?
+        """,
+        (session_id,),
+    ).fetchone()
+
+    conn.close()
+
+    if not row:
+        return None
+
+    user_id = row["user_id"]
+    email = row["email"]
+    expires_at = row["expires_at"]
+
+    if expires_at < time.time():
+        invalidate_session(session_id)
+        return None
+
+    return {
+        "id": user_id,
+        "email": email,
+    }
+
+
+# =========================================================
+# RATE LIMITING
+# =========================================================
+
+def get_login_attempt_key(ip_address, email):
+    return f"{ip_address or 'unknown'}:{(email or '').strip().lower()}"
+
+
+def is_login_attempt_allowed(ip_address, email):
+    key = get_login_attempt_key(ip_address, email)
+    now = time.time()
+
+    attempts = FAILED_LOGIN_ATTEMPTS.get(key, [])
+    attempts = [
+        attempt_time
+        for attempt_time in attempts
+        if now - attempt_time < LOGIN_ATTEMPT_WINDOW_SECONDS
+    ]
+
+    if len(attempts) >= MAX_LOGIN_ATTEMPTS:
+        FAILED_LOGIN_ATTEMPTS[key] = attempts
+        return False
+
+    return True
+
+
+def record_failed_login(ip_address, email):
+    key = get_login_attempt_key(ip_address, email)
+    now = time.time()
+
+    attempts = FAILED_LOGIN_ATTEMPTS.get(key, [])
+    attempts = [
+        attempt_time
+        for attempt_time in attempts
+        if now - attempt_time < LOGIN_ATTEMPT_WINDOW_SECONDS
+    ]
+
+    attempts.append(now)
+    FAILED_LOGIN_ATTEMPTS[key] = attempts
+
+
+def clear_login_attempts(ip_address, email):
+    key = get_login_attempt_key(ip_address, email)
+    FAILED_LOGIN_ATTEMPTS.pop(key, None)
 
 
 # =========================================================

@@ -54,6 +54,7 @@ function Individual() {
                 `${API_URL}/api/individual/upload`,
                 {
                     method: "POST",
+                    credentials: "include",
                     body: formData,
                 }
             );
@@ -107,6 +108,7 @@ function Individual() {
                 `${API_URL}/api/individual/chat`,
                 {
                     method: "POST",
+                    credentials: "include",
                     headers: {
                         "Content-Type": "application/json",
                     },

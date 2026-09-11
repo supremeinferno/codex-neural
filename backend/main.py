@@ -1,7 +1,8 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import os
 import sqlite3
 from pathlib import Path
 from datetime import datetime
@@ -19,6 +20,15 @@ from backend.auth import (
     request_password_reset,
     verify_otp,
     reset_password,
+    create_session,
+    get_session,
+    invalidate_session,
+    is_login_attempt_allowed,
+    record_failed_login,
+    clear_login_attempts,
+    SESSION_COOKIE_NAME,
+    SESSION_COOKIE_SECURE,
+    SESSION_TTL_SECONDS,
 )
 
 from backend.individual import (
@@ -33,6 +43,14 @@ from backend.individual import (
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "users.db"
+FRONTEND_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "FRONTEND_ORIGINS",
+        "http://127.0.0.1:5173,http://localhost:5173"
+    ).split(",")
+    if origin.strip()
+]
 
 
 # =========================================================
@@ -59,7 +77,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -265,7 +283,24 @@ def register(request: AuthRequest):
 # =========================================================
 
 @app.post("/api/login")
-def login(request: AuthRequest):
+def login(
+    request: AuthRequest,
+    request_obj: Request,
+    response: Response,
+):
+
+    client_ip = (
+        request_obj.client.host
+        if request_obj.client
+        else "unknown"
+    )
+
+    if not is_login_attempt_allowed(client_ip, request.email):
+
+        return {
+            "success": False,
+            "message": "Too many failed login attempts. Please try again later."
+        }
 
     user = authenticate_user(
         request.email,
@@ -274,10 +309,29 @@ def login(request: AuthRequest):
 
     if not user:
 
+        record_failed_login(client_ip, request.email)
+
         return {
             "success": False,
             "message": "Invalid email or password."
         }
+
+    clear_login_attempts(client_ip, request.email)
+
+    session_id, expires_at = create_session(
+        user["id"],
+        user["email"],
+    )
+
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        httponly=True,
+        secure=SESSION_COOKIE_SECURE,
+        samesite="lax",
+        max_age=SESSION_TTL_SECONDS,
+        path="/",
+    )
 
     # -----------------------------------------------------
     # Get user ID
@@ -333,7 +387,53 @@ def login(request: AuthRequest):
     return {
         "success": True,
         "message": "Login successful",
-        "user": user
+        "user": user,
+        "session_expires_at": expires_at,
+    }
+
+
+# =========================================================
+# SESSION ENDPOINTS
+# =========================================================
+
+@app.get("/api/session")
+def session_endpoint(request: Request):
+
+    session = get_session(
+        request.cookies.get(SESSION_COOKIE_NAME)
+    )
+
+    if not session:
+
+        return {
+            "authenticated": False,
+            "user": None,
+        }
+
+    return {
+        "authenticated": True,
+        "user": {
+            "id": session["id"],
+            "email": session["email"],
+        },
+    }
+
+
+@app.post("/api/logout")
+def logout(request: Request, response: Response):
+
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+
+    invalidate_session(session_id)
+
+    response.delete_cookie(
+        key=SESSION_COOKIE_NAME,
+        path="/",
+    )
+
+    return {
+        "success": True,
+        "message": "Logged out successfully.",
     }
 
 

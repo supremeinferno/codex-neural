@@ -38,6 +38,7 @@ function Register({ onBackToLogin }) {
     try {
       const response = await fetch(`${API_URL}/api/register`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
