@@ -1,11 +1,9 @@
 import hashlib
-import json
 import secrets
 import smtplib
 import sqlite3
 import time
 from email.message import EmailMessage
-from pathlib import Path
 
 from fastapi import Depends, HTTPException, Request
 from argon2 import PasswordHasher
@@ -16,10 +14,8 @@ from argon2.exceptions import (
 )
 
 from backend.config import settings
+from backend.repositories import sqlite_repository
 from backend.security import is_password_strong_enough, is_session_active, normalize_email
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "users.db"
 
 SMTP_EMAIL = settings.smtp_email
 SMTP_APP_PASSWORD = settings.smtp_app_password
@@ -51,61 +47,8 @@ FAILED_LOGIN_ATTEMPTS = {}
 OTP_EXPIRATION_SECONDS = 5 * 60
 
 
-def get_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def init_db():
-    conn = get_connection()
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'user'
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS password_reset_otps (
-            email TEXT PRIMARY KEY,
-            otp TEXT NOT NULL,
-            expires REAL NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sessions (
-            session_id TEXT PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            email TEXT NOT NULL,
-            created_at REAL NOT NULL,
-            expires_at REAL NOT NULL,
-            last_seen REAL NOT NULL
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_type TEXT NOT NULL,
-            user_id INTEGER,
-            email TEXT,
-            ip_address TEXT,
-            path TEXT,
-            details TEXT,
-            occurred_at REAL NOT NULL
-        )
-        """
-    )
-    conn.commit()
-    conn.close()
+    sqlite_repository.initialize_admin_database()
 
 
 # PASSWORD HELPERS
@@ -153,35 +96,21 @@ def register_user(email, password, role=None):
     if normalized_role is None:
         return False, "Invalid role. Supported roles are 'user' and 'admin'."
 
-    conn = get_connection()
     try:
-        conn.execute(
-            """
-            INSERT INTO users (email, password, role)
-            VALUES (?, ?, ?)
-            """,
-            (email, hash_password(password), normalized_role),
+        sqlite_repository.create_user(
+            email=email,
+            password_hash=hash_password(password),
+            role=normalized_role,
+            created_at=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
         )
-        conn.commit()
         return True, "Account created successfully."
     except sqlite3.IntegrityError:
         return False, "An account with this email already exists."
-    finally:
-        conn.close()
 
 
 def authenticate_user(email, password):
     email = normalize_email(email)
-    conn = get_connection()
-    user = conn.execute(
-        """
-        SELECT id, email, password, role
-        FROM users
-        WHERE email = ?
-        """,
-        (email,),
-    ).fetchone()
-    conn.close()
+    user = sqlite_repository.get_user_by_email(email)
 
     if not user:
         return None
@@ -191,19 +120,7 @@ def authenticate_user(email, password):
         return None
 
     if not stored_hash.startswith("$argon2"):
-        conn = get_connection()
-        try:
-            conn.execute(
-                """
-                UPDATE users
-                SET password = ?
-                WHERE id = ?
-                """,
-                (hash_password(password), user["id"]),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        sqlite_repository.update_user_password(user["id"], hash_password(password))
 
     return {"id": user["id"], "email": user["email"], "role": user["role"] or DEFAULT_ROLE}
 
@@ -212,46 +129,21 @@ def create_session(user_id, email):
     session_id = secrets.token_urlsafe(32)
     now = time.time()
     expires_at = now + SESSION_TTL_SECONDS
-    conn = get_connection()
-    try:
-        conn.execute(
-            """
-            INSERT INTO sessions (session_id, user_id, email, created_at, expires_at, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (session_id, user_id, email, now, expires_at, now),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    sqlite_repository.create_session_record(session_id, user_id, email, now, expires_at)
     return session_id, expires_at
 
 
 def invalidate_session(session_id):
     if not session_id:
         return
-    conn = get_connection()
-    try:
-        conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
-        conn.commit()
-    finally:
-        conn.close()
+    sqlite_repository.delete_session_record(session_id)
 
 
 def get_session(session_id):
     if not session_id:
         return None
 
-    conn = get_connection()
-    row = conn.execute(
-        """
-        SELECT user_id, email, expires_at
-        FROM sessions
-        WHERE session_id = ?
-        """,
-        (session_id,),
-    ).fetchone()
-    conn.close()
+    row = sqlite_repository.get_session_record(session_id)
 
     if not row:
         return None
@@ -268,19 +160,11 @@ def get_session(session_id):
 
 
 def get_user_role(user_id):
-    conn = get_connection()
-    try:
-        row = conn.execute(
-            "SELECT role FROM users WHERE id = ?",
-            (user_id,),
-        ).fetchone()
-    finally:
-        conn.close()
+    stored_role = sqlite_repository.get_user_role_record(user_id)
 
-    if not row:
+    if not stored_role:
         return DEFAULT_ROLE
 
-    stored_role = row["role"] or DEFAULT_ROLE
     return stored_role.strip().lower() if stored_role else DEFAULT_ROLE
 
 
@@ -376,51 +260,24 @@ def clear_login_attempts(ip_address, email):
 
 
 def record_event(event_type, path=None, details=None, user_id=None, email=None, ip_address=None):
-    conn = get_connection()
-    try:
-        conn.execute(
-            """
-            INSERT INTO events (event_type, user_id, email, ip_address, path, details, occurred_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                event_type,
-                user_id,
-                email,
-                ip_address,
-                path,
-                json.dumps(details, default=str) if details is not None else None,
-                time.time(),
-            ),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    sqlite_repository.insert_event(
+        event_type=event_type,
+        path=path,
+        details=details,
+        user_id=user_id,
+        email=email,
+        ip_address=ip_address,
+        occurred_at=time.time(),
+    )
 
 
 def get_recent_events(limit=100):
-    conn = get_connection()
-    try:
-        rows = conn.execute(
-            """
-            SELECT id, event_type, user_id, email, ip_address, path, details, occurred_at
-            FROM events
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-    finally:
-        conn.close()
-    return [dict(row) for row in rows]
+    return sqlite_repository.get_recent_events(limit)
 
 
 def user_exists(email):
     email = normalize_email(email)
-    conn = get_connection()
-    user = conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
-    conn.close()
-    return user is not None
+    return sqlite_repository.user_exists(email)
 
 
 def generate_otp():
@@ -473,59 +330,30 @@ def request_password_reset(email):
     otp = generate_otp()
     expiration = time.time() + OTP_EXPIRATION_SECONDS
 
-    conn = get_connection()
-    try:
-        conn.execute("DELETE FROM password_reset_otps WHERE email = ?", (email,))
-        conn.execute(
-            """
-            INSERT INTO password_reset_otps (email, otp, expires)
-            VALUES (?, ?, ?)
-            """,
-            (email, otp, expiration),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    sqlite_repository.store_password_reset_otp(email, otp, expiration)
 
     try:
         send_otp_email(email, otp)
         return True, "OTP sent successfully."
     except Exception as error:
         print("OTP email error:", error)
-        conn = get_connection()
-        try:
-            conn.execute("DELETE FROM password_reset_otps WHERE email = ?", (email,))
-            conn.commit()
-        finally:
-            conn.close()
+        sqlite_repository.delete_password_reset_otp(email)
         return False, "Unable to send OTP. Please try again."
 
 
 def verify_otp(email, otp):
     email = normalize_email(email)
     otp = str(otp).strip()
-    conn = get_connection()
-    try:
-        stored_data = conn.execute(
-            "SELECT otp, expires FROM password_reset_otps WHERE email = ?",
-            (email,),
-        ).fetchone()
-    finally:
-        conn.close()
+    stored_data = sqlite_repository.get_password_reset_otp(email)
 
     if not stored_data:
         return False, "No OTP request found."
 
-    stored_otp = stored_data[0]
-    expires = stored_data[1]
+    stored_otp = stored_data["otp"]
+    expires = stored_data["expires"]
 
     if time.time() > expires:
-        conn = get_connection()
-        try:
-            conn.execute("DELETE FROM password_reset_otps WHERE email = ?", (email,))
-            conn.commit()
-        finally:
-            conn.close()
+        sqlite_repository.delete_password_reset_otp(email)
         return False, "OTP has expired."
 
     if otp != stored_otp:
@@ -548,21 +376,10 @@ def reset_password(email, otp, new_password):
     if not verified:
         return False, message
 
-    conn = get_connection()
-    try:
-        result = conn.execute(
-            "UPDATE users SET password = ? WHERE email = ?",
-            (hash_password(new_password), email),
-        )
-        if result.rowcount == 0:
-            conn.rollback()
-            return False, "User account not found."
-
-        conn.execute("DELETE FROM password_reset_otps WHERE email = ?", (email,))
-        conn.commit()
-        return True, "Password reset successfully."
-    finally:
-        conn.close()
-
-
-init_db()
+    updated = sqlite_repository.update_user_password_by_email(
+        email,
+        hash_password(new_password),
+    )
+    if updated == 0:
+        return False, "User account not found."
+    return True, "Password reset successfully."

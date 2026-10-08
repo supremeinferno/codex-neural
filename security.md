@@ -34,7 +34,7 @@ Benefits:
 
 ### 3. Centralized authentication and authorization
 
-Implemented in `backend/services/auth_service.py`; auth routes are in `backend/api/auth_routes.py` and feature routes are currently in `backend/main.py`.
+Implemented in `backend/services/auth_service.py`; authentication routes are in `backend/api/auth_routes.py` and protected feature routes are in dedicated modules under `backend/api/`.
 
 Current controls:
 - `verify_session` is used as the shared authentication dependency.
@@ -48,7 +48,7 @@ Benefits:
 
 ### 4. Role and permission model
 
-Implemented in `backend/services/auth_service.py` and enforced by dependencies used in `backend/main.py`.
+Implemented in `backend/services/auth_service.py` and enforced by dependencies used by the feature routers under `backend/api/`.
 
 Current controls:
 - Users now have a stored `role` field in the `users` table.
@@ -65,7 +65,7 @@ Benefits:
 
 ### 5. Login throttling and request rate limiting
 
-Failed-login tracking is in `backend/services/auth_service.py`; request rate limiting is in `backend/main.py`.
+Failed-login tracking is in `backend/services/auth_service.py`; request rate limiting is in `backend/middleware/rate_limit.py`.
 
 Current controls:
 - Failed login attempts are tracked per IP address and email.
@@ -163,13 +163,14 @@ Benefits:
 ## Current Implementation Notes
 
 - `backend/auth.py` is a compatibility facade; most authentication behavior lives in `backend/services/auth_service.py`.
-- SQLite schema initialization and legacy-column repair are in `backend/repositories/sqlite_repository.py`, but auth services still open SQLite connections directly. Persistence has not been fully consolidated.
-- Security events are inserted into the `events` table. The admin dashboard also reads a separate `login_activity` table, but the current login route does not insert login rows, so login-history data may be empty.
+- SQLite connections, queries, schema initialization, and legacy-column repair are centralized in `backend/repositories/sqlite_repository.py`; auth and admin services own workflow and policy, not SQL.
+- Security events are inserted into `events`; successful login activity is separately inserted into `login_activity` by `backend/api/auth_routes.py` through the SQLite repository.
 - `ADMIN_EMAIL` configures an email list, but protected API operations use the stored database role. The frontend also has its own hardcoded email check for showing the admin tab; that UI check is not authorization.
 - The password-registration validator requires at least 8 characters with upper/lowercase, a number, and a symbol. The password-reset implementation currently accepts a minimum length of 6, so password policy is inconsistent across flows.
 - Password-reset OTPs are six-digit values stored in plaintext in SQLite for five minutes. The reset-request endpoint also distinguishes unknown email addresses from known accounts, and OTP verification has no separate attempt throttle in the current implementation.
-- Research, PDF, admin, and health handlers now live in dedicated routers, while rate limiting is configured in `backend/middleware/rate_limit.py` and app/router assembly is in `backend/main.py`.
-- The route tests inject domain services and do not validate external provider calls or the full ASGI startup lifespan.
+- Research, PDF, admin, and health handlers live in dedicated routers, with admin policy in `backend/services/admin_service.py`; rate limiting is configured in `backend/middleware/rate_limit.py` and app/router assembly is in `backend/main.py`.
+- Router tests inject domain services; the app-bootstrap test enters the ASGI lifespan with database initialization stubbed. Tests do not validate external provider calls.
+- `backend/demo.py` seeds a known admin account only in its isolated temporary database and replaces external research/PDF provider calls with placeholders. It is for local development only and must not be exposed publicly.
 
 ## Current Limitations / Gaps
 
@@ -228,10 +229,10 @@ Remaining issue:
 ### 7. Code organization remains large
 
 Current state:
-- The API entrypoint and feature routers are separated, but authentication and repository persistence are still partly duplicated, and the frontend app remains a large stateful component.
+- The API entrypoint, feature routers, services, and repository are separated, while `backend/individual.py` still groups PDF extraction, indexing, and answer generation and the frontend app remains a large stateful component.
 
 Remaining issue:
-- Auth-service database access and audit/event responsibilities could be further separated behind repository/service interfaces.
+- PDF extraction, vector indexing, and model answering could be split into submodules if that domain continues to grow.
 
 ## Recommended Next Security Priorities
 

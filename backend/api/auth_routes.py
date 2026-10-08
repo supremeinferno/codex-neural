@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
 
+from backend.repositories.sqlite_repository import record_login_activity
 from backend.auth import (
     SESSION_COOKIE_NAME,
     SESSION_COOKIE_SECURE,
@@ -22,6 +23,17 @@ from backend.auth import (
 )
 
 router = APIRouter()
+
+
+def sync_excel_safely():
+    try:
+        from backend.auth import sync_excel
+
+        sync_excel()
+    except ImportError:
+        pass
+    except Exception as error:
+        print("Excel synchronization warning:", error)
 
 
 class AuthRequest(BaseModel):
@@ -52,6 +64,8 @@ def home():
 @router.post("/api/register")
 def register(request: AuthRequest):
     success, message = register_user(request.email, request.password, role="user")
+    if success:
+        sync_excel_safely()
     return {"success": success, "message": message}
 
 
@@ -78,6 +92,8 @@ def login(request: AuthRequest, request_obj: Request, response: Response):
         return {"success": False, "message": "Invalid email or password."}
 
     clear_login_attempts(client_ip, request.email)
+    record_login_activity(user["id"], user["email"])
+    sync_excel_safely()
     record_event(
         event_type="login_success",
         path="/api/login",
