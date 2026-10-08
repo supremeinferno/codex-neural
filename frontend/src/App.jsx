@@ -489,13 +489,14 @@ function App() {
           RESEARCH ENGINE ONLINE
         </div>
 
-      <button
-        type="button"
-        className="logout-button"
-        onClick={handleLogout}
-      >
-        LOGOUT
-      </button>
+        <button
+          type="button"
+          className="logout-button"
+          onClick={handleLogout}
+        >
+          LOGOUT
+        </button>
+      </div>
 
     </nav>
   );

@@ -1,14 +1,12 @@
 # Security Overview
 
-This document summarizes the security posture of the repository as of September 2026 and reflects the work completed during the recent auth, rate-limiting, and auditing improvements.
-
-It is intended to capture the current implemented controls, what has changed recently, and which issues still remain before the project can be considered production-grade.
+This document describes security-related behavior visible in the current source. It is a code-level overview, not a security audit or a claim that the service is production-ready. For module ownership and setup, see [the architecture guide](docs/architecture.md) and [the development guide](docs/development.md).
 
 ## Current Security Features
 
 ### 1. Password hashing
 
-Implemented in `backend/auth.py`.
+Implemented in `backend/services/auth_service.py` and re-exported by `backend/auth.py`.
 
 Current controls:
 - Passwords are hashed with Argon2 via `argon2-cffi`.
@@ -21,7 +19,7 @@ Benefits:
 
 ### 2. Server-side sessions with HttpOnly cookie persistence
 
-Implemented in `backend/auth.py` and `backend/main.py`.
+Implemented in `backend/services/auth_service.py` and exposed by `backend/api/auth_routes.py`.
 
 Current controls:
 - The backend creates server-side session records in SQLite.
@@ -36,7 +34,7 @@ Benefits:
 
 ### 3. Centralized authentication and authorization
 
-Implemented in `backend/auth.py` and enforced in `backend/main.py`.
+Implemented in `backend/services/auth_service.py`; auth routes are in `backend/api/auth_routes.py` and feature routes are currently in `backend/main.py`.
 
 Current controls:
 - `verify_session` is used as the shared authentication dependency.
@@ -50,7 +48,7 @@ Benefits:
 
 ### 4. Role and permission model
 
-Implemented in `backend/auth.py` and `backend/main.py`.
+Implemented in `backend/services/auth_service.py` and enforced by dependencies used in `backend/main.py`.
 
 Current controls:
 - Users now have a stored `role` field in the `users` table.
@@ -67,7 +65,7 @@ Benefits:
 
 ### 5. Login throttling and request rate limiting
 
-Implemented in `backend/auth.py` and `backend/main.py`.
+Failed-login tracking is in `backend/services/auth_service.py`; request rate limiting is in `backend/main.py`.
 
 Current controls:
 - Failed login attempts are tracked per IP address and email.
@@ -95,7 +93,7 @@ Benefits:
 
 ### 6. Logout and session invalidation
 
-Implemented in `backend/main.py`.
+Implemented in `backend/api/auth_routes.py`.
 
 Current controls:
 - `POST /api/logout` invalidates the server-side session.
@@ -108,7 +106,7 @@ Benefits:
 
 ### 7. OTP-based password reset flow
 
-Implemented in `backend/auth.py` and exposed through `backend/main.py`.
+Implemented in `backend/services/auth_service.py` and exposed by `backend/api/auth_routes.py`.
 
 Current controls:
 - Password reset requests generate time-limited OTPs.
@@ -121,7 +119,7 @@ Benefits:
 
 ### 8. Audit/event logging
 
-Implemented in `backend/auth.py` and `backend/main.py`.
+Implemented in `backend/services/auth_service.py`, with selected events recorded by routes and middleware.
 
 Current controls:
 - Security and operational events are stored in the `events` table.
@@ -162,16 +160,16 @@ Current controls:
 Benefits:
 - Avoids fully open cross-origin access.
 
-## Recent Untracked / Completed Changes
+## Current Implementation Notes
 
-The following work was completed recently and should be treated as part of the current security baseline:
-
-- Centralized authentication and admin checking into shared auth dependencies.
-- Added role and permission support to the backend.
-- Added Redis-ready request rate limiting with algorithm selection and fallback behavior.
-- Expanded event logging beyond login records.
-- Updated the admin dashboard to expose role and event information.
-- Added migration logic for legacy users and legacy admin email fallback handling.
+- `backend/auth.py` is a compatibility facade; most authentication behavior lives in `backend/services/auth_service.py`.
+- SQLite schema initialization and legacy-column repair are in `backend/repositories/sqlite_repository.py`, but auth services still open SQLite connections directly. Persistence has not been fully consolidated.
+- Security events are inserted into the `events` table. The admin dashboard also reads a separate `login_activity` table, but the current login route does not insert login rows, so login-history data may be empty.
+- `ADMIN_EMAIL` configures an email list, but protected API operations use the stored database role. The frontend also has its own hardcoded email check for showing the admin tab; that UI check is not authorization.
+- The password-registration validator requires at least 8 characters with upper/lowercase, a number, and a symbol. The password-reset implementation currently accepts a minimum length of 6, so password policy is inconsistent across flows.
+- Password-reset OTPs are six-digit values stored in plaintext in SQLite for five minutes. The reset-request endpoint also distinguishes unknown email addresses from known accounts, and OTP verification has no separate attempt throttle in the current implementation.
+- Research, PDF, admin, and health handlers now live in dedicated routers, while rate limiting is configured in `backend/middleware/rate_limit.py` and app/router assembly is in `backend/main.py`.
+- The route tests inject domain services and do not validate external provider calls or the full ASGI startup lifespan.
 
 ## Current Limitations / Gaps
 
@@ -189,10 +187,10 @@ Remaining issue:
 ### 2. Admin fallback still exists for older accounts
 
 Current state:
-- Older users can still be recognized through the configured admin email allowlist during migration.
+- `ADMIN_EMAILS` is derived from configuration and is used in admin user-deletion protection. Authentication and API role checks resolve the persisted `role` field.
 
 Remaining issue:
-- This should eventually be fully replaced by persisted role data for all users.
+- The email allowlist, persisted API role, and frontend's hardcoded admin email check are not one unified role source. Define and migrate a single admin policy.
 
 ### 3. Redis is required for true shared rate limiting
 
@@ -230,10 +228,10 @@ Remaining issue:
 ### 7. Code organization remains large
 
 Current state:
-- The auth and main backend files have grown significantly.
+- The API entrypoint and feature routers are separated, but authentication and repository persistence are still partly duplicated, and the frontend app remains a large stateful component.
 
 Remaining issue:
-- The project would benefit from splitting auth, session management, rate limiting, and event logging into separate modules or services.
+- Auth-service database access and audit/event responsibilities could be further separated behind repository/service interfaces.
 
 ## Recommended Next Security Priorities
 
