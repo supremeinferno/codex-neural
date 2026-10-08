@@ -499,7 +499,7 @@
   margin: 45px auto 0;
 
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 250px minmax(0, 1fr);
 
   background: rgba(10, 10, 10, 0.75);
 
@@ -510,6 +510,10 @@
 
   box-shadow:
     0 35px 90px rgba(0, 0, 0, 0.4);
+}
+
+.individual-workspace-pdf-visible {
+  grid-template-columns: 250px minmax(300px, 0.9fr) minmax(360px, 1.1fr);
 }
 
 /* =========================================================
@@ -590,7 +594,7 @@
 
 .individual-document-stats {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
 
   margin-top: 25px;
 
@@ -724,6 +728,36 @@
 
   font-size: 9px;
   letter-spacing: 0.12em;
+}
+
+.individual-chat-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.individual-pdf-toggle-button {
+  flex-shrink: 0;
+  padding: 9px 12px;
+  color: var(--gold-light);
+  border: 1px solid rgba(197, 154, 74, 0.32);
+  border-radius: 7px;
+  background: rgba(197, 154, 74, 0.06);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.individual-pdf-toggle-button:hover {
+  background: rgba(197, 154, 74, 0.13);
+  border-color: rgba(197, 154, 74, 0.6);
+}
+
+.individual-pdf-toggle-button:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 3px;
 }
 
 .individual-chat-messages {
@@ -989,6 +1023,79 @@
 }
 
 /* =========================================================
+   PDF VIEWER
+   ========================================================= */
+
+.individual-pdf-panel {
+  min-width: 0;
+  min-height: 680px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.012);
+  border-right: 1px solid var(--line);
+}
+
+.individual-pdf-topbar {
+  min-height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.individual-pdf-topbar .individual-eyebrow {
+  margin-bottom: 7px;
+  font-size: 8px;
+}
+
+.individual-pdf-topbar h2 {
+  margin: 0;
+  color: var(--white);
+  font-size: 18px;
+}
+
+.individual-pdf-topbar h2 span {
+  color: var(--gold-light);
+}
+
+.individual-download-button {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 11px;
+  color: var(--gold-light);
+  border: 1px solid rgba(197, 154, 74, 0.32);
+  border-radius: 7px;
+  background: rgba(197, 154, 74, 0.06);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.individual-download-button:hover {
+  background: rgba(197, 154, 74, 0.13);
+  border-color: rgba(197, 154, 74, 0.6);
+}
+
+.individual-download-button span {
+  font-size: 13px;
+}
+
+.individual-pdf-frame {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 560px;
+  border: 0;
+  background: #181818;
+}
+
+/* =========================================================
    RESPONSIVE
    ========================================================= */
 
@@ -1008,6 +1115,16 @@
 
   .individual-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .individual-pdf-panel {
+    min-height: 620px;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .individual-pdf-frame {
+    min-height: 540px;
   }
 
   .individual-sidebar {
@@ -1054,6 +1171,16 @@
 
   .individual-chat-topbar {
     padding: 20px;
+  }
+
+  .individual-pdf-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 18px;
+  }
+
+  .individual-pdf-frame {
+    min-height: 460px;
   }
 
   .individual-chat-messages {

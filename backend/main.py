@@ -1,8 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi.responses import FileResponse
 
 import sqlite3
+import re
 from pathlib import Path
 from datetime import datetime
 
@@ -22,6 +24,7 @@ from backend.auth import (
 )
 
 from backend.individual import (
+    INDIVIDUAL_DB_PATH,
     build_individual_index,
     answer_individual_question,
 )
@@ -440,6 +443,45 @@ async def upload_individual_pdf(
     )
 
     return result
+
+
+# =========================================================
+# INDIVIDUAL PDF FILE
+# =========================================================
+
+@app.get("/api/individual/{document_id}/file")
+def get_individual_pdf(
+    document_id: str,
+    download: bool = False,
+):
+
+    if re.fullmatch(r"[a-f0-9]{12}", document_id) is None:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid document ID.",
+        )
+
+    pdf_path = Path(INDIVIDUAL_DB_PATH) / f"{document_id}.pdf"
+
+    if not pdf_path.is_file():
+
+        raise HTTPException(
+            status_code=404,
+            detail="PDF document not found.",
+        )
+
+    disposition = "attachment" if download else "inline"
+
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'{disposition}; filename="{pdf_path.name}"'
+            ),
+        },
+    )
 
 
 # =========================================================
