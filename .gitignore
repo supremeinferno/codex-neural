@@ -13,6 +13,9 @@ venv/
 # Environment variables
 .env
 
+# Local account database and SQLite sidecar files
+backend/users.db*
+
 # Node
 node_modules/
 frontend/node_modules/
