@@ -1,15 +1,22 @@
 import os
 import re
+import time
 import hashlib
 import fitz
 
+from dotenv import load_dotenv
+
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
-from langchain_mistralai import MistralAIEmbeddings, ChatMistralAI
+from langchain_mistralai import MistralAIEmbeddings
+from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Loads software-eng/.env (same file auth.py uses)
+load_dotenv(os.path.join(BASE_DIR, "..", ".env"))
 
 INDIVIDUAL_DB_PATH = os.path.join(
     BASE_DIR,
@@ -18,14 +25,105 @@ INDIVIDUAL_DB_PATH = os.path.join(
 
 COLLECTION_NAME = "individual_documents"
 
+# Document ids are the first 12 hex characters of the file's MD5 hash
+DOCUMENT_ID_PATTERN = re.compile(r"[a-f0-9]{12}")
+
+# Same model your Nexus tab uses
+GROQ_MODEL = "openai/gpt-oss-120b"
+
+# Maximum characters sent to the model for a full-document summary.
+# Lower this if you still hit rate limits, raise it for longer summaries.
+MAX_SUMMARY_CHARACTERS = 30000
+
+
+# =========================================================
+# MODEL HELPERS
+# =========================================================
 
 def load_embeddings():
     return MistralAIEmbeddings()
 
 
+def load_llm():
+    return ChatGroq(
+        model=GROQ_MODEL,
+        api_key=os.getenv("GROQ_API_KEY"),
+        temperature=0,
+        timeout=120,
+        max_retries=0
+    )
+
+
+def is_rate_limit_error(error):
+    """
+    True if the error is an HTTP 429 from Groq or Mistral.
+    """
+
+    status = getattr(error, "status_code", None)
+
+    if status is None:
+        response = getattr(error, "response", None)
+        status = getattr(response, "status_code", None)
+
+    if status == 429:
+        return True
+
+    return "429" in str(error) and "rate" in str(error).lower()
+
+
+def invoke_with_retry(llm, prompt, attempts=3, wait_seconds=8):
+    """
+    Calls the model. If the service reports a rate limit,
+    waits and tries again before giving up.
+    """
+
+    for attempt in range(attempts):
+
+        try:
+            return llm.invoke(prompt)
+
+        except Exception as error:
+
+            if not is_rate_limit_error(error):
+                raise
+
+            if attempt == attempts - 1:
+                raise
+
+            time.sleep(wait_seconds * (attempt + 1))
+
+
+# =========================================================
+# FILE HELPERS
+# =========================================================
+
 def make_document_id(file_bytes):
     return hashlib.md5(file_bytes).hexdigest()[:12]
 
+
+def get_pdf_path(document_id):
+    """
+    Returns the saved PDF path for a document id,
+    or None if the id is invalid or the file does not exist.
+    """
+
+    if not DOCUMENT_ID_PATTERN.fullmatch(document_id or ""):
+        return None
+
+    pdf_path = os.path.join(
+        INDIVIDUAL_DB_PATH,
+        f"{document_id}.pdf"
+    )
+
+    if not os.path.exists(pdf_path):
+        return None
+
+    return pdf_path
+
+
+# =========================================================
+# PDF PROCESSING
+# =========================================================
 
 def looks_like_heading(text):
     text = text.strip()
@@ -204,6 +302,10 @@ def build_individual_index(pdf_bytes, document_name):
     }
 
 
+# =========================================================
+# QUESTION ANSWERING
+# =========================================================
+
 def is_summary_question(question):
     question_lower = question.lower().strip()
 
@@ -286,19 +388,11 @@ def generate_full_document_summary(
 
     full_context = "\n\n".join(context_parts)
 
-    # Prevent extremely large documents from exceeding
-    # the model context window.
-    max_characters = 90000
+    # Keep the request small enough for the model's rate limits.
+    if len(full_context) > MAX_SUMMARY_CHARACTERS:
+        full_context = full_context[:MAX_SUMMARY_CHARACTERS]
 
-    if len(full_context) > max_characters:
-        full_context = full_context[:max_characters]
-
-    llm = ChatMistralAI(
-        model="mistral-small-latest",
-        temperature=0,
-        timeout=120,
-        max_retries=0
-    )
+    llm = load_llm()
 
     prompt = f"""
 You are an expert document analysis assistant.
@@ -327,12 +421,12 @@ DOCUMENT CONTENT:
 {full_context}
 """
 
-    response = llm.invoke(prompt)
+    response = invoke_with_retry(llm, prompt)
 
     return response.content
 
 
-def answer_individual_question(question, document_id):
+def _answer_individual_question(question, document_id):
     vectorstore = Chroma(
         persist_directory=INDIVIDUAL_DB_PATH,
         collection_name=COLLECTION_NAME,
@@ -387,12 +481,7 @@ def answer_individual_question(question, document_id):
         ]
     )
 
-    llm = ChatMistralAI(
-        model="mistral-small-latest",
-        temperature=0,
-        timeout=120,
-        max_retries=0
-    )
+    llm = load_llm()
 
     prompt = f"""
 You are a PDF document assistant.
@@ -415,7 +504,7 @@ USER QUESTION:
 {question}
 """
 
-    response = llm.invoke(prompt)
+    response = invoke_with_retry(llm, prompt)
 
     return {
         "success": True,
@@ -431,3 +520,26 @@ USER QUESTION:
             for doc in relevant_documents
         ]
     }
+
+
+def answer_individual_question(question, document_id):
+    """
+    Public function used by main.py. Turns rate-limit errors
+    into a friendly message instead of a 500 error.
+    """
+
+    try:
+        return _answer_individual_question(question, document_id)
+
+    except Exception as error:
+
+        if is_rate_limit_error(error):
+            return {
+                "success": False,
+                "message": (
+                    "The AI service is busy right now (rate limit). "
+                    "Please wait a minute and try again."
+                )
+            }
+
+        raise

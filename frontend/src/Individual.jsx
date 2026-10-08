@@ -12,6 +12,7 @@ function Individual() {
     const [question, setQuestion] = useState("");
     const [messages, setMessages] = useState([]);
     const [asking, setAsking] = useState(false);
+    const [showPdf, setShowPdf] = useState(false);
 
     const handleFileChange = (event) => {
         const selectedFile = event.target.files[0];
@@ -168,6 +169,10 @@ function Individual() {
         setQuestion(text);
     };
 
+    const pdfFileUrl = document
+        ? `${API_URL}/api/individual/${document.document_id}/file`
+        : "";
+
     return (
         <div className="individual-page">
 
@@ -245,7 +250,11 @@ function Individual() {
             )}
 
             {document && (
-                <div className="individual-workspace">
+                <div
+                    className={`individual-workspace${
+                        showPdf ? " individual-workspace-pdf-visible" : ""
+                    }`}
+                >
 
                     <aside className="individual-sidebar">
 
@@ -269,13 +278,6 @@ function Individual() {
                                     {document.pages}
                                 </strong>
                                 <span>Pages</span>
-                            </div>
-
-                            <div>
-                                <strong>
-                                    {document.chunks}
-                                </strong>
-                                <span>Chunks</span>
                             </div>
 
                         </div>
@@ -328,6 +330,37 @@ function Individual() {
 
                     </aside>
 
+                    {showPdf && (
+                        <section
+                            id="individual-pdf-panel"
+                            className="individual-pdf-panel"
+                        >
+                            <div className="individual-pdf-topbar">
+                                <div>
+                                    <div className="individual-eyebrow">
+                                        <span></span>
+                                        ORIGINAL DOCUMENT
+                                    </div>
+                                    <h2>PDF <span>viewer</span></h2>
+                                </div>
+
+                                <a
+                                    className="individual-download-button"
+                                    href={`${pdfFileUrl}?download=true`}
+                                >
+                                    DOWNLOAD ORIGINAL
+                                    <span>↓</span>
+                                </a>
+                            </div>
+
+                            <iframe
+                                className="individual-pdf-frame"
+                                src={`${pdfFileUrl}#page=1`}
+                                title={`PDF viewer for ${document.document_name}`}
+                            />
+                        </section>
+                    )}
+
                     <main className="individual-chat-workspace">
 
                         <div className="individual-chat-topbar">
@@ -343,8 +376,26 @@ function Individual() {
                                 </h2>
                             </div>
 
-                            <div className="individual-chat-document">
-                                {document.pages} PAGES
+                            <div className="individual-chat-topbar-actions">
+                                <button
+                                    type="button"
+                                    className="individual-pdf-toggle-button"
+                                    aria-expanded={showPdf}
+                                    aria-controls={
+                                        showPdf
+                                            ? "individual-pdf-panel"
+                                            : undefined
+                                    }
+                                    onClick={() =>
+                                        setShowPdf((visible) => !visible)
+                                    }
+                                >
+                                    {showPdf ? "HIDE PDF" : "VIEW PDF"}
+                                </button>
+
+                                <div className="individual-chat-document">
+                                    {document.pages} PAGES
+                                </div>
                             </div>
 
                         </div>
