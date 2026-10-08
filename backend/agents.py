@@ -236,7 +236,8 @@ critic_prompt = ChatPromptTemplate.from_messages([
     ),
     (
         "human",
-        """Review the research report below and evaluate it strictly.
+        """
+Review the research report below and evaluate it strictly.
 
 Report:
 {report}
@@ -254,7 +255,7 @@ Areas to Improve:
 - ...
 
 One line verdict:
-..."""
+"""
     ),
 ])
 
