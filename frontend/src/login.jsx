@@ -23,6 +23,7 @@ function Login({ onLogin, onCreateAccount, onForgotPassword }) {
     try {
       const response = await fetch(`${API_URL}/api/login`, {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

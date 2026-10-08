@@ -29,7 +29,10 @@ function Dashboard({ user }) {
             const response = await fetch(
                 `${API_URL}/api/admin/dashboard?email=${encodeURIComponent(
                     adminEmail
-                )}`
+                )}`,
+                {
+                    credentials: "include",
+                }
             );
 
             const result = await response.json();
@@ -77,6 +80,7 @@ function Dashboard({ user }) {
                 )}`,
                 {
                     method: "DELETE",
+                    credentials: "include",
                 }
             );
 
@@ -116,6 +120,7 @@ function Dashboard({ user }) {
                 )}`,
                 {
                     method: "DELETE",
+                    credentials: "include",
                 }
             );
 
@@ -157,6 +162,7 @@ function Dashboard({ user }) {
                 )}`,
                 {
                     method: "DELETE",
+                    credentials: "include",
                 }
             );
 

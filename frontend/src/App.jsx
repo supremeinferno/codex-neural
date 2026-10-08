@@ -35,22 +35,40 @@ function App() {
   // the browser tab/session is closed.
   // -------------------------------------------------------
 
-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    try {
-      return !!sessionStorage.getItem("codex_user");
-    } catch {
-      return false;
-    }
-  });
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  const [user, setUser] = useState(() => {
-    try {
-      const stored = sessionStorage.getItem("codex_user");
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const restoreSession = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/session`, {
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          setUser(null);
+          setIsLoggedIn(false);
+          return;
+        }
+
+        const data = await response.json();
+
+        if (data.authenticated && data.user) {
+          setUser(data.user);
+          setIsLoggedIn(true);
+          return;
+        }
+      } catch (error) {
+        console.error("Session restore failed:", error);
+      }
+
+      setUser(null);
+      setIsLoggedIn(false);
+    };
+
+    restoreSession();
+  }, []);
 
   // =======================================================
   // LOGIN
@@ -64,27 +82,20 @@ function App() {
     setAuthPage("login");
 
     setActiveTab("nexus");
-
-    try {
-      sessionStorage.setItem(
-        "codex_user",
-        JSON.stringify(loggedInUser)
-      );
-
-      sessionStorage.setItem(
-        "codex_active_tab",
-        "nexus"
-      );
-    } catch (err) {
-      console.error("Failed to persist session:", err);
-    }
   };
 
-  // =======================================================
-  // LOGOUT
-  // =======================================================
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+
+    try {
+      await fetch(`${API_URL}/api/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (error) {
+      console.error("Logout request failed:", error);
+    }
+
     setUser(null);
 
     setIsLoggedIn(false);
@@ -98,13 +109,6 @@ function App() {
     setReport("");
 
     setError("");
-
-    try {
-      sessionStorage.removeItem("codex_user");
-      sessionStorage.removeItem("codex_active_tab");
-    } catch (err) {
-      console.error("Failed to clear session:", err);
-    }
   };
 
   // =======================================================
@@ -236,6 +240,7 @@ function App() {
         `${API_URL}/api/research`,
         {
           method: "POST",
+          credentials: "include",
 
           headers: {
             "Content-Type": "application/json",
@@ -484,8 +489,6 @@ function App() {
           RESEARCH ENGINE ONLINE
         </div>
 
-        {/* LOGOUT */}
-
         <button
           type="button"
           className="logout-button"
@@ -493,8 +496,8 @@ function App() {
         >
           LOGOUT
         </button>
-
       </div>
+
     </nav>
   );
 

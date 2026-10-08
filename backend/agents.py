@@ -1,16 +1,12 @@
 from langchain.agents import create_agent
-from langchain_mistralai import ChatMistralAI
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
-import os
 
+from backend.config import settings
 from backend.tools import tavily_search, scrape_webpage
 
-from dotenv import load_dotenv
-load_dotenv()
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY = settings.groq_api_key
 
 # ============================================================
 # LLM

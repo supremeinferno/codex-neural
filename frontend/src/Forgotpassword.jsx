@@ -36,6 +36,7 @@ function ForgotPassword({ onBack }) {
         `${API_URL}/api/forgot-password`,
         {
           method: "POST",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
           },
@@ -93,6 +94,7 @@ function ForgotPassword({ onBack }) {
         `${API_URL}/api/verify-otp`,
         {
           method: "POST",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
           },
@@ -160,6 +162,7 @@ function ForgotPassword({ onBack }) {
         `${API_URL}/api/reset-password`,
         {
           method: "POST",
+          credentials: "include",
           headers: {
             "Content-Type": "application/json",
           },
