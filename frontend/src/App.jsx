@@ -9,6 +9,9 @@ import Dashboard from "./Dashboard";
 import Login from "./login.jsx";
 import Register from "./register.jsx";
 import Individual from "./Individual.jsx";
+import ChatHistory from "./ChatHistory.jsx";
+import NavigationDrawer from "./NavigationDrawer.jsx";
+import "./styles/navigation.css";
 
 import { API_URL } from "./config";
 
@@ -32,6 +35,13 @@ function App() {
     }
   });
 
+  const [token, setToken] = useState(() => sessionStorage.getItem("codex_token") || "");
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [openedConversation, setOpenedConversation] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activePage, setActivePage] = useState("workspace");
+  const [conversationId, setConversationId] = useState(null);
+
   const [user, setUser] = useState(() => {
     try {
       const stored = sessionStorage.getItem("codex_user");
@@ -45,7 +55,9 @@ function App() {
   // LOGIN
   // =======================================================
 
-  const handleLogin = (loggedInUser) => {
+  const handleLogin = (loggedInUser, sessionToken) => {
+    setToken(sessionToken);
+    sessionStorage.setItem("codex_token", sessionToken);
     setUser(loggedInUser);
 
     setIsLoggedIn(true);
@@ -81,20 +93,40 @@ function App() {
     setAuthPage("login");
 
     setActiveTab("nexus");
+    setActivePage("workspace");
+    setDrawerOpen(false);
 
+    const oldToken = sessionStorage.getItem("codex_token");
+    if (oldToken) fetch(`${API_URL}/api/logout`, { method: "POST", headers: { Authorization: `Bearer ${oldToken}` } }).catch(() => {});
+    setToken("");
+    setConversationId(null);
+    setOpenedConversation(null);
     setTopic("");
 
     setReport("");
+    setConversationId(null);
+    setOpenedConversation(null);
 
     setError("");
 
     try {
       sessionStorage.removeItem("codex_user");
+      sessionStorage.removeItem("codex_token");
       sessionStorage.removeItem("codex_active_tab");
     } catch (err) {
       console.error("Failed to clear session:", err);
     }
   };
+
+  useEffect(() => {
+    if (!user) return;
+    if (!token) { handleLogout(); return; }
+    let cancelled = false;
+    fetch(`${API_URL}/api/session`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((response) => { if (!response.ok && !cancelled) handleLogout(); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // =======================================================
   // ADMIN CHECK
@@ -221,6 +253,23 @@ function App() {
     setActiveStage(0);
 
     try {
+      let currentConversationId = conversationId;
+      if (!currentConversationId) {
+        const created = await fetch(`${API_URL}/api/conversations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ kind: "research", title: topic.trim() }),
+        });
+        if (!created.ok) throw new Error("Unable to start a saved chat.");
+        const chat = await created.json();
+        currentConversationId = chat.id;
+        setConversationId(chat.id);
+      }
+      await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: "user", content: topic.trim() }),
+      });
+      setHistoryVersion((value) => value + 1);
       const response = await fetch(
         `${API_URL}/api/research`,
         {
@@ -228,6 +277,7 @@ function App() {
 
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
 
           body: JSON.stringify({
@@ -251,6 +301,11 @@ function App() {
       }
 
       setReport(data.report);
+      await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: "assistant", content: data.report }),
+      });
+      setHistoryVersion((value) => value + 1);
 
       setActiveStage(
         stages.length - 1
@@ -302,6 +357,8 @@ function App() {
     setTopic("");
 
     setReport("");
+    setConversationId(null);
+    setOpenedConversation(null);
 
     setError("");
 
@@ -390,10 +447,10 @@ function App() {
   // =======================================================
 
   const Navbar = () => (
+    <>
     <nav className="navbar">
-
+      <button className="menu-toggle" type="button" aria-label="Open navigation menu" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>☰</button>
       {/* LOGO */}
-
       <div className="logo">
         CODEX.
       </div>
@@ -412,6 +469,8 @@ function App() {
               : ""
           }`}
           onClick={() => {
+            setActivePage("workspace");
+            setConversationId(null); setOpenedConversation(null);
             setActiveTab("nexus");
           }}
         >
@@ -428,6 +487,8 @@ function App() {
               : ""
           }`}
           onClick={() => {
+            setActivePage("workspace");
+            setConversationId(null); setOpenedConversation(null);
             setActiveTab("individual");
           }}
         >
@@ -446,6 +507,7 @@ function App() {
             }`}
             onClick={() => {
               if (isAdmin) {
+                setActivePage("workspace");
                 setActiveTab("dashboard");
               }
             }}
@@ -473,19 +535,41 @@ function App() {
           RESEARCH ENGINE ONLINE
         </div>
 
-        {/* LOGOUT */}
-
-        <button
-          type="button"
-          className="logout-button"
-          onClick={handleLogout}
-        >
-          LOGOUT
-        </button>
-
       </div>
     </nav>
+    <NavigationDrawer
+      open={drawerOpen}
+      onClose={() => setDrawerOpen(false)}
+      onHistory={() => { setDrawerOpen(false); setActivePage("history"); }}
+      onSignOut={handleLogout}
+    />
+    </>
   );
+
+  const startNewChat = () => {
+    setOpenedConversation(null);
+    setConversationId(null);
+    setTopic(""); setReport(""); setError(""); setLoading(false);
+    setActiveTab("nexus"); setActivePage("workspace");
+  };
+
+  const openSavedChat = async (chat) => {
+    const response = await fetch(`${API_URL}/api/conversations/${chat.id}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) return;
+    const data = await response.json();
+    setOpenedConversation(data); setConversationId(data.id); setActivePage("workspace");
+    if (data.kind === "pdf") {
+      setActiveTab("individual");
+    } else {
+      const firstQuestion = data.messages.find((message) => message.role === "user");
+      const lastAnswer = [...data.messages].reverse().find((message) => message.role === "assistant");
+      setTopic(firstQuestion?.content || data.title); setReport(lastAnswer?.content || ""); setActiveTab("nexus");
+    }
+  };
+
+  if (activePage === "history") {
+    return <div className="app"><Background /><Navbar /><ChatHistory token={token} version={historyVersion} currentId={conversationId} onNew={startNewChat} onSelect={openSavedChat} /></div>;
+  }
 
   // =======================================================
   // INDIVIDUAL PDF ANALYZER
@@ -495,10 +579,8 @@ function App() {
     return (
       <div className="app">
         <Background />
-
         <Navbar />
-
-        <Individual />
+        <Individual token={token} openedConversation={openedConversation} currentConversationId={conversationId} onConversationChange={(id) => { setConversationId(id); if (id === null) setOpenedConversation(null); setHistoryVersion((value) => value + 1); }} />
       </div>
     );
   }

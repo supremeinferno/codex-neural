@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
@@ -7,6 +7,9 @@ import sqlite3
 import re
 from pathlib import Path
 from datetime import datetime
+import json
+import os
+from fastapi import Depends
 
 
 # =========================================================
@@ -21,6 +24,9 @@ from backend.auth import (
     request_password_reset,
     verify_otp,
     reset_password,
+    create_session,
+    get_user_for_session,
+    revoke_session,
 )
 
 from backend.individual import (
@@ -35,7 +41,7 @@ from backend.individual import (
 # =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "users.db"
+DB_PATH = Path(os.getenv("CODEX_DATABASE_PATH", str(BASE_DIR / "users.db")))
 
 
 # =========================================================
@@ -131,6 +137,43 @@ def initialize_admin_database():
     # Login activity table
     # -----------------------------------------------------
 
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK(kind IN ('research', 'pdf')),
+            document_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS conversation_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+            content TEXT NOT NULL,
+            sources TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_documents (
+            document_id TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            document_name TEXT NOT NULL,
+            pages INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (document_id, user_id)
+        )
+        """
+    )
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS login_activity (
@@ -333,10 +376,12 @@ def login(request: AuthRequest):
 
     sync_excel_safely()
 
+    token = create_session(user["id"])
     return {
         "success": True,
         "message": "Login successful",
-        "user": user
+        "user": user,
+        "token": token,
     }
 
 
@@ -400,13 +445,192 @@ def reset_password_endpoint(
     }
 
 
+
+def require_user(authorization: str | None = Header(default=None)):
+    scheme, _, token = (authorization or "").partition(" ")
+    user = get_user_for_session(token) if scheme.lower() == "bearer" else None
+    if not user:
+        raise HTTPException(status_code=401, detail="Please sign in again.")
+    return user
+
+
+def _owned_conversation(cursor, conversation_id, user_id):
+    cursor.execute(
+        "SELECT * FROM conversations WHERE id = ? AND user_id = ?",
+        (conversation_id, user_id),
+    )
+    return cursor.fetchone()
+
+
+class ConversationRequest(BaseModel):
+    title: str = "New chat"
+    kind: str = "research"
+    document_id: str | None = None
+
+
+class ConversationRenameRequest(BaseModel):
+    title: str
+
+
+class MessageRequest(BaseModel):
+    role: str
+    content: str
+    sources: list = []
+
+
+@app.get("/api/session")
+def session_info(user=Depends(require_user)):
+    return {"user": user}
+
+
+@app.post("/api/logout")
+def logout(authorization: str | None = Header(default=None)):
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme.lower() == "bearer":
+        revoke_session(token)
+    return {"success": True}
+
+
+@app.get("/api/conversations")
+def list_conversations(kind: str | None = None, user=Depends(require_user)):
+    if kind is not None and kind not in ("research", "pdf"):
+        raise HTTPException(status_code=400, detail="Invalid chat type.")
+    conn = get_db()
+    query = "SELECT id, title, kind, document_id, created_at, updated_at FROM conversations WHERE user_id = ?"
+    params = [user["id"]]
+    if kind:
+        query += " AND kind = ?"
+        params.append(kind)
+    query += " ORDER BY updated_at DESC, id DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return {"conversations": [dict(row) for row in rows]}
+
+
+@app.post("/api/conversations")
+def create_conversation(request: ConversationRequest, user=Depends(require_user)):
+    kind = request.kind.strip().lower()
+    if kind not in ("research", "pdf"):
+        raise HTTPException(status_code=400, detail="Invalid chat type.")
+    title = request.title.strip()[:200] or "New chat"
+    conn = get_db()
+    if kind == "pdf":
+        owned = conn.execute(
+            "SELECT 1 FROM user_documents WHERE document_id = ? AND user_id = ?",
+            (request.document_id, user["id"]),
+        ).fetchone()
+        if not owned:
+            conn.close()
+            raise HTTPException(status_code=404, detail="PDF document not found.")
+    now = datetime.now().isoformat(sep=" ", timespec="seconds")
+    cursor = conn.execute(
+        "INSERT INTO conversations (user_id, title, kind, document_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (user["id"], title, kind, request.document_id if kind == "pdf" else None, now, now),
+    )
+    conversation_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {"id": conversation_id, "title": title, "kind": kind, "document_id": request.document_id}
+
+
+@app.get("/api/conversations/{conversation_id}")
+def get_conversation(conversation_id: int, user=Depends(require_user)):
+    conn = get_db()
+    conversation = _owned_conversation(conn.cursor(), conversation_id, user["id"])
+    if not conversation:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    messages = conn.execute(
+        "SELECT id, role, content, sources, created_at FROM conversation_messages WHERE conversation_id = ? ORDER BY id",
+        (conversation_id,),
+    ).fetchall()
+    result = dict(conversation)
+    if result.get("document_id"):
+        document = conn.execute("SELECT document_name, pages FROM user_documents WHERE document_id = ? AND user_id = ?", (result["document_id"], user["id"])).fetchone()
+        result["document"] = dict(document) if document else None
+    result["messages"] = []
+    for message in messages:
+        item = dict(message)
+        try:
+            item["sources"] = json.loads(item["sources"] or "[]")
+        except (ValueError, TypeError):
+            item["sources"] = []
+        result["messages"].append(item)
+    conn.close()
+    return result
+
+
+@app.patch("/api/conversations/{conversation_id}")
+def rename_conversation(conversation_id: int, request: ConversationRenameRequest, user=Depends(require_user)):
+    title = request.title.strip()[:200]
+    if not title:
+        raise HTTPException(status_code=400, detail="Chat name cannot be empty.")
+    conn = get_db()
+    cursor = conn.cursor()
+    if not _owned_conversation(cursor, conversation_id, user["id"]):
+        conn.close()
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    conn.execute("UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+                 (title, datetime.now().isoformat(sep=" ", timespec="seconds"), conversation_id, user["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True, "title": title}
+
+
+@app.delete("/api/conversations/{conversation_id}")
+def delete_conversation(conversation_id: int, user=Depends(require_user)):
+    conn = get_db()
+    cursor = conn.cursor()
+    if not _owned_conversation(cursor, conversation_id, user["id"]):
+        conn.close()
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    conn.execute("DELETE FROM conversation_messages WHERE conversation_id = ?", (conversation_id,))
+    conn.execute("DELETE FROM conversations WHERE id = ? AND user_id = ?", (conversation_id, user["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
+@app.post("/api/conversations/{conversation_id}/messages")
+def save_message(conversation_id: int, request: MessageRequest, user=Depends(require_user)):
+    role = request.role.strip().lower()
+    if role not in ("user", "assistant") or not request.content.strip():
+        raise HTTPException(status_code=400, detail="A valid chat message is required.")
+    conn = get_db()
+    cursor = conn.cursor()
+    conversation = _owned_conversation(cursor, conversation_id, user["id"])
+    if not conversation:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Chat not found.")
+    if conversation["kind"] == "pdf":
+        owned = conn.execute("SELECT 1 FROM user_documents WHERE document_id = ? AND user_id = ?",
+                             (conversation["document_id"], user["id"])).fetchone()
+        if not owned:
+            conn.close()
+            raise HTTPException(status_code=404, detail="PDF document not found.")
+    now = datetime.now().isoformat(sep=" ", timespec="seconds")
+    cursor.execute("INSERT INTO conversation_messages (conversation_id, role, content, sources, created_at) VALUES (?, ?, ?, ?, ?)",
+                   (conversation_id, role, request.content, json.dumps(request.sources), now))
+    if role == "user" and conversation["title"] == "New chat":
+        title = request.content.strip().replace("\n", " ")[:70] or "New chat"
+        conn.execute("UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+                     (title, now, conversation_id, user["id"]))
+    else:
+        conn.execute("UPDATE conversations SET updated_at = ? WHERE id = ? AND user_id = ?",
+                     (now, conversation_id, user["id"]))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+
 # =========================================================
 # NEXUS RESEARCH
 # =========================================================
 
 @app.post("/api/research")
 def research(
-    request: ResearchRequest
+    request: ResearchRequest,
+    user=Depends(require_user),
 ):
 
     result = run_research_pipeline(
@@ -422,7 +646,8 @@ def research(
 
 @app.post("/api/individual/upload")
 async def upload_individual_pdf(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    user=Depends(require_user),
 ):
 
     if (
@@ -442,6 +667,14 @@ async def upload_individual_pdf(
         file.filename
     )
 
+    if result.get("success"):
+        conn = get_db()
+        conn.execute(
+            "INSERT OR IGNORE INTO user_documents (document_id, user_id, document_name, pages, created_at) VALUES (?, ?, ?, ?, ?)",
+            (result["document_id"], user["id"], result["document_name"], result["pages"], datetime.now().isoformat(sep=" ", timespec="seconds")),
+        )
+        conn.commit()
+        conn.close()
     return result
 
 
@@ -453,6 +686,7 @@ async def upload_individual_pdf(
 def get_individual_pdf(
     document_id: str,
     download: bool = False,
+    user=Depends(require_user),
 ):
 
     if re.fullmatch(r"[a-f0-9]{12}", document_id) is None:
@@ -461,6 +695,12 @@ def get_individual_pdf(
             status_code=400,
             detail="Invalid document ID.",
         )
+
+    conn = get_db()
+    owned = conn.execute("SELECT 1 FROM user_documents WHERE document_id = ? AND user_id = ?", (document_id, user["id"])).fetchone()
+    conn.close()
+    if not owned:
+        raise HTTPException(status_code=404, detail="PDF document not found.")
 
     pdf_path = Path(INDIVIDUAL_DB_PATH) / f"{document_id}.pdf"
 
@@ -490,7 +730,8 @@ def get_individual_pdf(
 
 @app.post("/api/individual/chat")
 def individual_chat(
-    request: IndividualQuestionRequest
+    request: IndividualQuestionRequest,
+    user=Depends(require_user),
 ):
 
     if not request.question.strip():
@@ -499,6 +740,12 @@ def individual_chat(
             "success": False,
             "message": "Please enter a question."
         }
+
+    conn = get_db()
+    owned = conn.execute("SELECT 1 FROM user_documents WHERE document_id = ? AND user_id = ?", (request.document_id, user["id"])).fetchone()
+    conn.close()
+    if not owned:
+        raise HTTPException(status_code=404, detail="PDF document not found.")
 
     result = answer_individual_question(
         request.question,
