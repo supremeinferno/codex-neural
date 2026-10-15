@@ -88,9 +88,9 @@ def run_research_pipeline(topic: str) -> dict:
 
     research_combined = (
         f"SEARCH RESULTS:\n"
-        f"{state['search_results']}\n\n"
+        f"{state['search_results'][:6000]}\n\n"
         f"DETAILED SCRAPED CONTENT:\n"
-        f"{state['scraped_content']}"
+        f"{state['scraped_content'][:6000]}"
     )
 
     # Delay before Writer's Mistral request
