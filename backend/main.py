@@ -409,9 +409,25 @@ def research(
     request: ResearchRequest
 ):
 
-    result = run_research_pipeline(
-        request.topic
-    )
+    try:
+        result = run_research_pipeline(
+            request.topic
+        )
+    except Exception as e:
+        print(f"Research pipeline failed: {e}")
+
+        message = str(e)
+
+        if "rate_limit" in message or "429" in message or "413" in message:
+            message = (
+                "The AI provider's rate limit was hit. "
+                "Please wait a minute and try again."
+            )
+
+        raise HTTPException(
+            status_code=500,
+            detail=message[:300],
+        )
 
     return result
 

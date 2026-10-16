@@ -221,10 +221,17 @@ function App() {
     setActiveStage(0);
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        180000
+      );
+
       const response = await fetch(
         `${API_URL}/api/research`,
         {
           method: "POST",
+          signal: controller.signal,
 
           headers: {
             "Content-Type": "application/json",
@@ -236,9 +243,20 @@ function App() {
         }
       );
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
+        let detail = "";
+
+        try {
+          detail = (await response.json()).detail;
+        } catch {
+          // response had no JSON body
+        }
+
         throw new Error(
-          `Server returned ${response.status}`
+          detail ||
+            `Server returned ${response.status}`
         );
       }
 
@@ -261,7 +279,11 @@ function App() {
         err
       );
 
-      if (
+      if (err.name === "AbortError") {
+        setError(
+          "The request timed out. The backend may have stopped or is being rate limited. Please try again."
+        );
+      } else if (
         err instanceof TypeError &&
         err.message === "Failed to fetch"
       ) {
