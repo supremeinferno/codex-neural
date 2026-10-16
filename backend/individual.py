@@ -77,10 +77,23 @@ def invoke_with_retry(llm, prompt, attempts=3, wait_seconds=8):
     waits and tries again before giving up.
     """
 
+    return run_with_retry(
+        lambda: llm.invoke(prompt),
+        attempts,
+        wait_seconds
+    )
+
+
+def run_with_retry(action, attempts=3, wait_seconds=8):
+    """
+    Runs any call (LLM or embeddings). On a rate limit,
+    waits and tries again before giving up.
+    """
+
     for attempt in range(attempts):
 
         try:
-            return llm.invoke(prompt)
+            return action()
 
         except Exception as error:
 
@@ -131,6 +144,10 @@ def looks_like_heading(text):
     if not text or len(text) > 150:
         return False
 
+    # Sentences and list items end with punctuation; headings do not.
+    if text.endswith((".", ",", ";", ":")):
+        return False
+
     patterns = [
         r"^\d+\.\s+.+",
         r"^\d+\.\d+\s+.+",
@@ -175,8 +192,10 @@ def extract_pdf_documents(pdf_path, document_id, document_name):
 
             if looks_like_heading(line):
                 current_section = clean_heading(line)
-            else:
-                page_lines.append(line)
+
+            # Keep the line in the text even when it looks like a
+            # heading, so nothing is lost from the index.
+            page_lines.append(line)
 
         page_text = "\n".join(page_lines)
 
@@ -290,7 +309,35 @@ def build_individual_index(pdf_bytes, document_name):
             "chunks": len(existing_ids)
         }
 
-    vectorstore.add_documents(chunks)
+    try:
+        run_with_retry(lambda: vectorstore.add_documents(chunks))
+
+    except Exception as error:
+
+        # Remove partly stored chunks so a retry re-indexes everything.
+        partial = vectorstore.get(
+            where={
+                "document_id": document_id
+            },
+            include=[]
+        ).get("ids", [])
+
+        if partial:
+            vectorstore.delete(ids=partial)
+
+        if is_rate_limit_error(error):
+            return {
+                "success": False,
+                "message": (
+                    "The AI service is busy right now (rate limit). "
+                    "Please wait a minute and upload the PDF again."
+                ),
+                "document_id": document_id,
+                "pages": len(documents),
+                "chunks": 0
+            }
+
+        raise
 
     return {
         "success": True,
@@ -315,8 +362,7 @@ def is_summary_question(question):
         "summary",
         "summarize this",
         "summarise this",
-        "overview",
-        "overall",
+        "overview of",
         "give me an overview",
         "give me a summary",
         "summarize the document",
@@ -389,8 +435,24 @@ def generate_full_document_summary(
     full_context = "\n\n".join(context_parts)
 
     # Keep the request small enough for the model's rate limits.
+    # Instead of cutting off the end, sample parts evenly so the
+    # conclusion and results are still covered in long documents.
     if len(full_context) > MAX_SUMMARY_CHARACTERS:
-        full_context = full_context[:MAX_SUMMARY_CHARACTERS]
+        per_part = MAX_SUMMARY_CHARACTERS // len(context_parts)
+
+        if per_part < 200:
+            # Too many parts: keep an evenly spaced subset of them.
+            keep = max(1, MAX_SUMMARY_CHARACTERS // 1500)
+            step = len(context_parts) / keep
+            context_parts = [
+                context_parts[int(i * step)]
+                for i in range(keep)
+            ]
+            per_part = MAX_SUMMARY_CHARACTERS // len(context_parts)
+
+        full_context = "\n\n".join(
+            part[:per_part] for part in context_parts
+        )
 
     llm = load_llm()
 
@@ -465,7 +527,9 @@ def _answer_individual_question(question, document_id):
         }
     )
 
-    relevant_documents = retriever.invoke(question)
+    relevant_documents = run_with_retry(
+        lambda: retriever.invoke(question)
+    )
 
     if not relevant_documents:
         return {

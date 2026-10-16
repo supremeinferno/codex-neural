@@ -1,8 +1,7 @@
-import time
 import re
 
 from backend.agents import (
-    build_search_agent,
+    build_research_agent,
     writer_chain,
     critic_chain,
 )
@@ -22,10 +21,7 @@ def run_research_pipeline(topic: str) -> dict:
     print("STEP 1 - Search agent is working ...")
     print("=" * 50)
 
-    search_agent = build_search_agent()
-
-    # Small delay before the Mistral request
-    time.sleep(20)
+    search_agent = build_research_agent()
 
     search_result = search_agent.invoke({
         "messages": [
@@ -61,7 +57,7 @@ def run_research_pipeline(topic: str) -> dict:
         print(f"\nScraping URL: {url}")
 
         try:
-            state["scraped_content"] = scrape_webpage(url)
+            state["scraped_content"] = scrape_webpage.invoke({"url": url})
 
         except Exception as e:
             state["scraped_content"] = (
@@ -92,9 +88,6 @@ def run_research_pipeline(topic: str) -> dict:
         f"DETAILED SCRAPED CONTENT:\n"
         f"{state['scraped_content'][:6000]}"
     )
-
-    # Delay before Writer's Mistral request
-    time.sleep(20)
 
     state["report"] = writer_chain.invoke({
         "topic": topic,

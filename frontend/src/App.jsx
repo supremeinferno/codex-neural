@@ -252,6 +252,8 @@ function App() {
 
     setActiveStage(0);
 
+    let timeoutId;
+
     try {
       let currentConversationId = conversationId;
       if (!currentConversationId) {
@@ -272,7 +274,7 @@ function App() {
       setHistoryVersion((value) => value + 1);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(
+      timeoutId = setTimeout(
         () => controller.abort(),
         180000
       );
@@ -293,8 +295,6 @@ function App() {
           }),
         }
       );
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         let detail = "";
@@ -353,6 +353,7 @@ function App() {
         );
       }
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   };
@@ -591,7 +592,7 @@ function App() {
   };
 
   if (activePage === "history") {
-    return <div className="app"><Background /><Navbar /><ChatHistory token={token} version={historyVersion} currentId={conversationId} onNew={startNewChat} onSelect={openSavedChat} /></div>;
+    return <div className="app">{Background()}{Navbar()}<ChatHistory token={token} version={historyVersion} currentId={conversationId} onNew={startNewChat} onSelect={openSavedChat} /></div>;
   }
 
   // =======================================================
@@ -601,8 +602,8 @@ function App() {
   if (activeTab === "individual") {
     return (
       <div className="app">
-        <Background />
-        <Navbar />
+        {Background()}
+        {Navbar()}
         <Individual token={token} openedConversation={openedConversation} currentConversationId={conversationId} onConversationChange={(id) => { setConversationId(id); if (id === null) setOpenedConversation(null); setHistoryVersion((value) => value + 1); }} />
       </div>
     );
@@ -623,9 +624,9 @@ function App() {
 
     return (
       <div className="app">
-        <Background />
+        {Background()}
 
-        <Navbar />
+        {Navbar()}
 
         <Dashboard user={user} />
       </div>
@@ -638,9 +639,9 @@ function App() {
 
   return (
     <div className="app">
-      <Background />
+      {Background()}
 
-      <Navbar />
+      {Navbar()}
 
       {/* =================================================
           LANDING / LOADING
