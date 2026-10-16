@@ -498,7 +498,7 @@ function App() {
             setActiveTab("nexus");
           }}
         >
-          NEXUS
+          CODEX
         </button>
 
         {/* INDIVIDUAL */}
@@ -564,6 +564,12 @@ function App() {
     <NavigationDrawer
       open={drawerOpen}
       onClose={() => setDrawerOpen(false)}
+      token={token}
+      version={historyVersion}
+      currentId={conversationId}
+      email={user?.email}
+      onNewChat={() => { setDrawerOpen(false); startNewChat(); }}
+      onSelectChat={(chat) => { setDrawerOpen(false); openSavedChat(chat); }}
       onHistory={() => { setDrawerOpen(false); setActivePage("history"); }}
       onSignOut={handleLogout}
     />
