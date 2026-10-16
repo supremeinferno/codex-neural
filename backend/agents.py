@@ -21,7 +21,7 @@ llm = ChatGroq(
     model="openai/gpt-oss-120b",
     api_key=GROQ_API_KEY,
     temperature=0,
-    max_retries=2
+    max_retries=6  # Groq 429s say retry in a few seconds; back off instead of failing
 )
 
 # ============================================================

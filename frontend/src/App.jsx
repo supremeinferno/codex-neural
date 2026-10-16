@@ -253,27 +253,11 @@ function App() {
     setActiveStage(0);
 
     try {
-      let currentConversationId = conversationId;
-      if (!currentConversationId) {
-        const created = await fetch(`${API_URL}/api/conversations`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ kind: "research", title: topic.trim() }),
-        });
-        if (!created.ok) throw new Error("Unable to start a saved chat.");
-        const chat = await created.json();
-        currentConversationId = chat.id;
-        setConversationId(chat.id);
-      }
-      await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
-        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role: "user", content: topic.trim() }),
-      });
-      setHistoryVersion((value) => value + 1);
       const response = await fetch(
         `${API_URL}/api/research`,
         {
           method: "POST",
+          signal: controller.signal,
 
           headers: {
             "Content-Type": "application/json",
@@ -286,9 +270,20 @@ function App() {
         }
       );
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
+        let detail = "";
+
+        try {
+          detail = (await response.json()).detail;
+        } catch {
+          // response had no JSON body
+        }
+
         throw new Error(
-          `Server returned ${response.status}`
+          detail ||
+            `Server returned ${response.status}`
         );
       }
 
@@ -316,7 +311,11 @@ function App() {
         err
       );
 
-      if (
+      if (err.name === "AbortError") {
+        setError(
+          "The request timed out. The backend may have stopped or is being rate limited. Please try again."
+        );
+      } else if (
         err instanceof TypeError &&
         err.message === "Failed to fetch"
       ) {
