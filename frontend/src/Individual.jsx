@@ -2,8 +2,9 @@ import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { API_URL } from "./config";
+import { useEffect } from "react";
 
-function Individual() {
+function Individual({ token, openedConversation, currentConversationId, onConversationChange }) {
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [document, setDocument] = useState(null);
@@ -13,6 +14,32 @@ function Individual() {
     const [messages, setMessages] = useState([]);
     const [asking, setAsking] = useState(false);
     const [showPdf, setShowPdf] = useState(false);
+    const [pdfUrl, setPdfUrl] = useState("");
+
+    useEffect(() => {
+        let objectUrl;
+        if (!document?.document_id || !token) { setPdfUrl(""); return; }
+        fetch(`${API_URL}/api/individual/${document.document_id}/file`, { headers: { Authorization: `Bearer ${token}` } })
+            .then((response) => { if (!response.ok) throw new Error("Unable to open this PDF."); return response.blob(); })
+            .then((blob) => { objectUrl = URL.createObjectURL(blob); setPdfUrl(objectUrl); })
+            .catch(() => setError("Unable to open this PDF."));
+        return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    }, [document?.document_id, token]);
+
+    useEffect(() => {
+        if (!openedConversation) { setDocument(null); setMessages([]); setFile(null); setQuestion(""); return; }
+        let cancelled = false;
+        fetch(`${API_URL}/api/conversations/${openedConversation.id}`, { headers: { Authorization: `Bearer ${token}` } })
+            .then((response) => { if (!response.ok) throw new Error("Unable to reopen this chat."); return response.json(); })
+            .then((data) => {
+                if (cancelled) return;
+                if (data.kind !== "pdf" || !data.document) { setError("This saved PDF is no longer available."); return; }
+                setDocument({ document_id: data.document_id, document_name: data.document.document_name, pages: data.document.pages });
+                setMessages(data.messages || []);
+                setError("");
+            }).catch((e) => { if (!cancelled) setError(e.message); });
+        return () => { cancelled = true; };
+    }, [openedConversation, token]);
 
     const handleFileChange = (event) => {
         const selectedFile = event.target.files[0];
@@ -21,6 +48,7 @@ function Individual() {
         setDocument(null);
         setMessages([]);
         setQuestion("");
+        onConversationChange(null);
 
         if (!selectedFile) {
             setFile(null);
@@ -46,6 +74,7 @@ function Individual() {
         setError("");
         setDocument(null);
         setMessages([]);
+        onConversationChange(null);
 
         try {
             const formData = new FormData();
@@ -55,6 +84,7 @@ function Individual() {
                 `${API_URL}/api/individual/upload`,
                 {
                     method: "POST",
+                    headers: { Authorization: `Bearer ${token}` },
                     body: formData,
                 }
             );
@@ -71,6 +101,14 @@ function Individual() {
             }
 
             setDocument(data);
+            const created = await fetch(`${API_URL}/api/conversations`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ kind: "pdf", title: data.document_name, document_id: data.document_id }),
+            });
+            if (!created.ok) throw new Error("PDF is ready, but its chat could not be saved.");
+            const chat = await created.json();
+            onConversationChange(chat.id);
         } catch (error) {
             console.error("PDF upload error:", error);
 
@@ -97,19 +135,39 @@ function Individual() {
 
         setMessages((previousMessages) => [
             ...previousMessages,
-            {
-                role: "user",
-                content: currentQuestion,
-            },
+            { role: "user", content: currentQuestion },
         ]);
 
         try {
+            // Prefer the current workspace ID. A new upload clears this ID while
+            // an older openedConversation may still be present during transitions.
+            let activeId = currentConversationId || openedConversation?.id;
+            if (!activeId) {
+                const created = await fetch(`${API_URL}/api/conversations`, {
+                    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ kind: "pdf", title: document.document_name, document_id: document.document_id }),
+                });
+                if (!created.ok) throw new Error("Unable to save this chat.");
+                const chat = await created.json(); activeId = chat.id; onConversationChange(chat.id);
+            }
+            const userMessageSave = await fetch(`${API_URL}/api/conversations/${activeId}/messages`, {
+                method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ role: "user", content: currentQuestion }),
+            });
+            if (!userMessageSave.ok) {
+                throw new Error("Your question could not be saved. Please try again.");
+            }
+            setMessages((previousMessages) => [
+                ...previousMessages,
+                { role: "user", content: currentQuestion },
+            ]);
             const response = await fetch(
                 `${API_URL}/api/individual/chat`,
                 {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
+                        Authorization: `Bearer ${token}`,
                     },
                     body: JSON.stringify({
                         question: currentQuestion,
@@ -132,21 +190,22 @@ function Individual() {
                 return;
             }
 
-            setMessages((previousMessages) => [
-                ...previousMessages,
-                {
-                    role: "assistant",
-                    content: data.answer,
-                    sources: data.sources || [],
-                },
-            ]);
+            const assistantMessage = { role: "assistant", content: data.answer, sources: data.sources || [] };
+            const assistantMessageSave = await fetch(`${API_URL}/api/conversations/${activeId}/messages`, {
+                method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ role: "assistant", content: data.answer, sources: data.sources || [] }),
+            });
+            setMessages((previousMessages) => [...previousMessages, assistantMessage]);
+            if (!assistantMessageSave.ok) {
+                setError("The answer arrived, but it could not be saved to chat history.");
+            }
         } catch (error) {
             console.error("Chat error:", error);
-
+            setQuestion(currentQuestion);
             setError(
                 error instanceof TypeError
                     ? "Unable to connect to the server."
-                    : "Something went wrong while getting the answer."
+                    : (error.message || "Something went wrong while getting the answer.")
             );
         } finally {
             setAsking(false);
@@ -167,9 +226,6 @@ function Individual() {
         setQuestion(text);
     };
 
-    const pdfFileUrl = document
-        ? `${API_URL}/api/individual/${document.document_id}/file`
-        : "";
 
     return (
         <div className="individual-page">
@@ -344,7 +400,7 @@ function Individual() {
 
                                 <a
                                     className="individual-download-button"
-                                    href={`${pdfFileUrl}?download=true`}
+                                    href={pdfUrl} download={document.document_name}
                                 >
                                     DOWNLOAD ORIGINAL
                                     <span>↓</span>
@@ -353,7 +409,7 @@ function Individual() {
 
                             <iframe
                                 className="individual-pdf-frame"
-                                src={`${pdfFileUrl}#page=1`}
+                                src={`${pdfUrl}#page=1`}
                                 title={`PDF viewer for ${document.document_name}`}
                             />
                         </section>

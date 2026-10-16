@@ -8,6 +8,7 @@ from pathlib import Path
 from email.message import EmailMessage
 from dotenv import load_dotenv
 import os
+from datetime import datetime, timedelta
 
 
 # =========================================================
@@ -27,7 +28,7 @@ SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD")
 # DATABASE
 # =========================================================
 
-DB_PATH = BASE_DIR / "users.db"
+DB_PATH = Path(os.getenv("CODEX_DATABASE_PATH", str(BASE_DIR / "users.db")))
 
 
 def get_connection():
@@ -48,6 +49,17 @@ def init_db():
         """
     )
 
+    # Opaque, revocable sessions. Only a hash of the bearer token is stored.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            token_hash TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at TEXT NOT NULL
+        )
+        """
+    )
+
     # OTP table
     conn.execute(
         """
@@ -59,6 +71,46 @@ def init_db():
         """
     )
 
+    conn.commit()
+    conn.close()
+
+
+
+def create_session(user_id):
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat(timespec="seconds")
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO auth_sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+        (token_hash, user_id, expires_at),
+    )
+    conn.commit()
+    conn.close()
+    return token
+
+
+def get_user_for_session(token):
+    if not token:
+        return None
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT users.id, users.email FROM auth_sessions
+           JOIN users ON users.id = auth_sessions.user_id
+           WHERE auth_sessions.token_hash = ? AND auth_sessions.expires_at > ?""",
+        (token_hash, datetime.utcnow().isoformat(timespec="seconds")),
+    ).fetchone()
+    conn.close()
+    return {"id": row[0], "email": row[1]} if row else None
+
+
+def revoke_session(token):
+    if not token:
+        return
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    conn = get_connection()
+    conn.execute("DELETE FROM auth_sessions WHERE token_hash = ?", (token_hash,))
     conn.commit()
     conn.close()
 

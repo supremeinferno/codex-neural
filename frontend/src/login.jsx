@@ -43,7 +43,7 @@ function Login({ onLogin, onCreateAccount, onForgotPassword }) {
         return;
       }
 
-      onLogin(data.user);
+      onLogin(data.user, data.token);
     } catch (error) {
       console.error("Login error:", error);
 
