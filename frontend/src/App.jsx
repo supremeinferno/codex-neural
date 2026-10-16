@@ -253,6 +253,30 @@ function App() {
     setActiveStage(0);
 
     try {
+      let currentConversationId = conversationId;
+      if (!currentConversationId) {
+        const created = await fetch(`${API_URL}/api/conversations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ kind: "research", title: topic.trim() }),
+        });
+        if (!created.ok) throw new Error("Unable to start a saved chat.");
+        const chat = await created.json();
+        currentConversationId = chat.id;
+        setConversationId(chat.id);
+      }
+      await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: "user", content: topic.trim() }),
+      });
+      setHistoryVersion((value) => value + 1);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        180000
+      );
+
       const response = await fetch(
         `${API_URL}/api/research`,
         {
