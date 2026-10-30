@@ -50,6 +50,8 @@ DB_PATH = Path(os.getenv("CODEX_DATABASE_PATH", str(BASE_DIR / "users.db")))
 
 ADMIN_EMAIL = "codexproject9@gmail.com"
 
+MAX_PDF_BYTES = 25 * 1024 * 1024
+
 
 # =========================================================
 # FASTAPI APP
@@ -194,29 +196,6 @@ initialize_admin_database()
 
 
 # =========================================================
-# DATABASE HELPERS
-# =========================================================
-
-def sync_excel_safely():
-    """
-    Synchronize Excel if sync_excel exists in auth.py.
-    The API will continue working even if Excel sync fails.
-    """
-
-    try:
-        from backend.auth import sync_excel
-
-        sync_excel()
-
-    except ImportError:
-        # sync_excel is not available in auth.py
-        pass
-
-    except Exception as e:
-        print("Excel synchronization warning:", e)
-
-
-# =========================================================
 # REQUEST MODELS
 # =========================================================
 
@@ -298,8 +277,6 @@ def register(request: AuthRequest):
         conn.commit()
         conn.close()
 
-        sync_excel_safely()
-
     return {
         "success": success,
         "message": message
@@ -374,7 +351,6 @@ def login(request: AuthRequest):
 
     conn.close()
 
-    sync_excel_safely()
 
     token = create_session(user["id"])
     return {
@@ -676,7 +652,14 @@ async def upload_individual_pdf(
             "message": "Only PDF files are allowed."
         }
 
-    pdf_bytes = await file.read()
+    pdf_bytes = await file.read(MAX_PDF_BYTES + 1)
+
+    if len(pdf_bytes) > MAX_PDF_BYTES:
+
+        return {
+            "success": False,
+            "message": "PDF is too large. The limit is 25 MB."
+        }
 
     result = build_individual_index(
         pdf_bytes,
@@ -775,21 +758,16 @@ def individual_chat(
 # ADMIN AUTHORIZATION
 # =========================================================
 
-def verify_admin(email: str):
-
-    if not email:
-
-        raise HTTPException(
-            status_code=401,
-            detail="Administrator email is required."
-        )
-
-    if email.strip().lower() != ADMIN_EMAIL.lower():
+def require_admin(user=Depends(require_user)):
+    # The admin is identified by the signed-in session, never by a request parameter.
+    if user["email"].strip().lower() != ADMIN_EMAIL.lower():
 
         raise HTTPException(
             status_code=403,
             detail="Administrator access required."
         )
+
+    return user
 
 
 # =========================================================
@@ -797,9 +775,7 @@ def verify_admin(email: str):
 # =========================================================
 
 @app.get("/api/admin/dashboard")
-def admin_dashboard(email: str):
-
-    verify_admin(email)
+def admin_dashboard(admin=Depends(require_admin)):
 
     # Make sure old DB is repaired
     initialize_admin_database()
@@ -904,10 +880,8 @@ def admin_dashboard(email: str):
 @app.delete("/api/admin/users/{user_id}")
 def admin_delete_user(
     user_id: int,
-    email: str
+    admin=Depends(require_admin),
 ):
-
-    verify_admin(email)
 
     conn = get_db()
     cursor = conn.cursor()
@@ -976,7 +950,6 @@ def admin_delete_user(
     conn.commit()
     conn.close()
 
-    sync_excel_safely()
 
     return {
         "success": True,
@@ -991,10 +964,8 @@ def admin_delete_user(
 @app.delete("/api/admin/logins/{activity_id}")
 def admin_delete_login(
     activity_id: int,
-    email: str
+    admin=Depends(require_admin),
 ):
-
-    verify_admin(email)
 
     conn = get_db()
     cursor = conn.cursor()
@@ -1019,7 +990,6 @@ def admin_delete_login(
             detail="Login record not found."
         )
 
-    sync_excel_safely()
 
     return {
         "success": True,
@@ -1033,10 +1003,8 @@ def admin_delete_login(
 
 @app.delete("/api/admin/logins")
 def admin_clear_logins(
-    email: str
+    admin=Depends(require_admin),
 ):
-
-    verify_admin(email)
 
     conn = get_db()
     cursor = conn.cursor()
@@ -1052,7 +1020,6 @@ def admin_clear_logins(
     conn.commit()
     conn.close()
 
-    sync_excel_safely()
 
     return {
         "success": True,
