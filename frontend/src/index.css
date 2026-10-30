@@ -5,4 +5,5 @@
 @import "./styles/individual.css";
 @import "./styles/dashboard.css";
 @import "./styles/navbar.css";
-@import "./styles/logout.css";
+@import "./styles/navigation.css";
+@import "./styles/system.css";

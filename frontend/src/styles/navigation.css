@@ -72,8 +72,8 @@
 .drawer-new-chat:hover { background:rgba(205,166,77,.16); }
 .drawer-new-chat span { font-size:18px; }
 .drawer-section-label { padding-top:20px; }
-.drawer-chat-list { display:grid; align-content:start; gap:2px; flex:1 1 0; min-height:0; overflow-y:auto; margin:0 -6px; padding:0 6px; }
-.drawer-chat { display:flex; align-items:center; gap:10px; width:100%; min-height:38px; padding:0 10px; border:0; border-radius:8px; background:transparent; color:#cfc9bf; text-align:left; font:500 13px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; cursor:pointer; }
+.drawer-chat-list { display:grid; grid-template-columns:minmax(0,1fr); align-content:start; gap:2px; flex:1 1 0; min-height:0; overflow-y:auto; margin:0 -6px; padding:0 6px; }
+.drawer-chat { display:flex; align-items:center; gap:10px; width:100%; min-width:0; min-height:38px; padding:0 10px; border:0; border-radius:8px; background:transparent; color:#cfc9bf; text-align:left; font:500 13px Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; cursor:pointer; }
 .drawer-chat:hover { background:rgba(255,255,255,.05); color:#f0ece4; }
 .drawer-chat.active { background:rgba(205,166,77,.12); color:#f0d08c; }
 .drawer-chat-icon { flex:0 0 26px; color:#d8a746; font-size:11px; font-weight:800; text-align:center; }

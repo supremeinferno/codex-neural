@@ -11,11 +11,18 @@ import Register from "./register.jsx";
 import Individual from "./Individual.jsx";
 import ChatHistory from "./ChatHistory.jsx";
 import NavigationDrawer from "./NavigationDrawer.jsx";
-import "./styles/navigation.css";
 
 import { API_URL } from "./config";
 
 const ADMIN_EMAIL = "codexproject9@gmail.com";
+
+const SUGGESTED_TOPICS = [
+  "State of solid-state batteries in 2026",
+  "How do AI agents use tools?",
+  "Microplastics and human health",
+];
+
+const TICKER_ITEMS = ["Search", "Read", "Synthesize", "Cited sources", "PDF Q&A", "Saved chats", "Multi-agent pipeline"];
 
 function App() {
 
@@ -362,6 +369,28 @@ function App() {
   // KEYBOARD HANDLER
   // =======================================================
 
+  const [copied, setCopied] = useState(false);
+
+  const copyReport = async () => {
+    try {
+      await navigator.clipboard.writeText(report);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (err) {
+      console.error("Failed to copy report:", err);
+    }
+  };
+
+  const downloadReport = () => {
+    const blob = new Blob([report], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${topic.trim().slice(0, 60).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "codex-report"}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleKeyDown = (event) => {
     if (
       event.key === "Enter" &&
@@ -561,6 +590,11 @@ function App() {
 
       </div>
     </nav>
+    <div className="ticker" aria-hidden="true">
+      <div className="ticker-track">
+        {[...TICKER_ITEMS, ...TICKER_ITEMS].map((item, index) => <span key={index}>{item}</span>)}
+      </div>
+    </div>
     <NavigationDrawer
       open={drawerOpen}
       onClose={() => setDrawerOpen(false)}
@@ -634,7 +668,7 @@ function App() {
 
         {Navbar()}
 
-        <Dashboard user={user} />
+        <Dashboard token={token} />
       </div>
     );
   }
@@ -748,10 +782,16 @@ function App() {
                   </button>
                 </div>
 
-                <div className="shortcut">
-                  <span>⌘</span>
+                <div className="topic-suggestions" aria-label="Example topics">
+                  {SUGGESTED_TOPICS.map((suggestion) => (
+                    <button key={suggestion} type="button" onClick={() => setTopic(suggestion)}>
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
 
-                  ENTER TO RUN
+                <div className="shortcut">
+                  <span>↵</span> ENTER TO RUN <span>·</span> <span>⇧ ↵</span> NEW LINE
                 </div>
               </>
             )}
@@ -865,7 +905,7 @@ function App() {
                 </div>
 
                 <p className="progress-note">
-                  Nexus is gathering evidence
+                  CODEX is gathering evidence
                   before generating your report.
                   This may take a moment.
                 </p>
@@ -921,7 +961,7 @@ function App() {
               </h1>
 
               <p>
-                Synthesized by the Nexus
+                Synthesized by the CODEX
                 multi-agent research pipeline.
               </p>
 
@@ -990,9 +1030,19 @@ function App() {
                 FINAL RESEARCH REPORT
               </span>
 
-              <span className="report-status">
-                ● VERIFIED
-              </span>
+              <div className="report-actions">
+                <span className="report-status">
+                  ● VERIFIED
+                </span>
+
+                <button type="button" onClick={copyReport}>
+                  {copied ? "COPIED ✓" : "COPY"}
+                </button>
+
+                <button type="button" onClick={downloadReport}>
+                  DOWNLOAD .MD
+                </button>
+              </div>
 
             </div>
 

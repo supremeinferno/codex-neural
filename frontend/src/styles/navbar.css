@@ -200,6 +200,7 @@
 @media (max-width: 860px) {
 
     .navbar {
+        height: auto;
         padding: 16px 4vw;
         flex-wrap: wrap;
         row-gap: 14px;
