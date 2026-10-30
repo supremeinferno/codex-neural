@@ -1,22 +1,21 @@
-.env
-.venv/
-__pycache__/
-node_modules/
-# Python cache
-__pycache__/
-*.py[cod]
-
-# Virtual environments
-.venv/
-venv/
-
 # Environment variables
 .env
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
 # Node
 node_modules/
-frontend/node_modules/
 
-# Build files
+# Build output
 dist/
 build/
+
+# Runtime data (local vector store)
+backend/individual_chroma/
+
+# OS files
+.DS_Store
