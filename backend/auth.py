@@ -6,8 +6,8 @@ import smtplib
 
 from pathlib import Path
 from email.message import EmailMessage
-
 from dotenv import load_dotenv
+import os
 
 
 # =========================================================
@@ -16,12 +16,11 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Loads:
-# software-eng/.env
+# Loads software-eng/.env
 load_dotenv(BASE_DIR.parent / ".env")
 
-SMTP_EMAIL = load_dotenv and __import__("os").getenv("SMTP_EMAIL")
-SMTP_APP_PASSWORD = __import__("os").getenv("SMTP_APP_PASSWORD")
+SMTP_EMAIL = os.getenv("SMTP_EMAIL")
+SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD")
 
 
 # =========================================================
@@ -49,7 +48,7 @@ def init_db():
         """
     )
 
-    # Password reset OTP table
+    # OTP table
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS password_reset_otps (
@@ -79,6 +78,7 @@ def hash_password(password):
 # =========================================================
 
 def register_user(email, password):
+
     email = email.strip().lower()
 
     if not email or not password:
@@ -103,10 +103,7 @@ def register_user(email, password):
         return True, "Account created successfully."
 
     except sqlite3.IntegrityError:
-        return (
-            False,
-            "An account with this email already exists."
-        )
+        return False, "An account with this email already exists."
 
     finally:
         conn.close()
@@ -117,6 +114,7 @@ def register_user(email, password):
 # =========================================================
 
 def authenticate_user(email, password):
+
     email = email.strip().lower()
 
     conn = get_connection()
@@ -149,7 +147,6 @@ def authenticate_user(email, password):
 # OTP SETTINGS
 # =========================================================
 
-# OTP remains valid for 5 minutes.
 OTP_EXPIRATION_SECONDS = 5 * 60
 
 
@@ -158,6 +155,7 @@ OTP_EXPIRATION_SECONDS = 5 * 60
 # =========================================================
 
 def user_exists(email):
+
     email = email.strip().lower()
 
     conn = get_connection()
@@ -181,7 +179,7 @@ def user_exists(email):
 # =========================================================
 
 def generate_otp():
-    # Secure 6-digit OTP
+
     return str(
         secrets.randbelow(900000) + 100000
     )
@@ -200,7 +198,7 @@ def send_otp_email(email, otp):
 
     message = EmailMessage()
 
-    message["Subject"] = "Your CODEX Password Reset OTP"
+    message["Subject"] = "CODEX Password Reset OTP"
     message["From"] = SMTP_EMAIL
     message["To"] = email
 
@@ -210,7 +208,7 @@ Hello,
 
 You requested to reset your CODEX Research password.
 
-Your OTP is:
+Your verification OTP is:
 
 {otp}
 
@@ -251,14 +249,14 @@ def request_password_reset(email):
     if not email:
         return False, "Email is required."
 
-    # Check whether account exists
+    # Check account
     if not user_exists(email):
         return False, "No account exists with this email."
 
     # Generate OTP
     otp = generate_otp()
 
-    # Expiration timestamp
+    # OTP expires after 5 minutes
     expiration = (
         time.time()
         + OTP_EXPIRATION_SECONDS
@@ -268,7 +266,7 @@ def request_password_reset(email):
 
     try:
 
-        # Remove any previous OTP for this email
+        # Remove previous OTP
         conn.execute(
             """
             DELETE FROM password_reset_otps
@@ -296,7 +294,7 @@ def request_password_reset(email):
     finally:
         conn.close()
 
-    # Send email
+    # Send OTP
     try:
 
         send_otp_email(
@@ -308,12 +306,9 @@ def request_password_reset(email):
 
     except Exception as error:
 
-        print(
-            "OTP email error:",
-            error,
-        )
+        print("OTP email error:", error)
 
-        # If email fails, remove the stored OTP
+        # Remove OTP if email failed
         conn = get_connection()
 
         try:
@@ -332,7 +327,7 @@ def request_password_reset(email):
 
         return (
             False,
-            "Unable to send OTP. Please check the email configuration and try again."
+            "Unable to send OTP. Please try again."
         )
 
 
@@ -361,7 +356,7 @@ def verify_otp(email, otp):
     finally:
         conn.close()
 
-    # No OTP exists
+    # OTP does not exist
     if not stored_data:
         return False, "No OTP request found."
 
@@ -403,7 +398,7 @@ def verify_otp(email, otp):
 def reset_password(
     email,
     otp,
-    new_password
+    new_password,
 ):
 
     email = email.strip().lower()
@@ -419,7 +414,7 @@ def reset_password(
             "Password must be at least 6 characters."
         )
 
-    # Verify OTP first
+    # Verify OTP
     verified, message = verify_otp(
         email,
         otp,
@@ -444,15 +439,16 @@ def reset_password(
             ),
         )
 
-        conn.commit()
-
+        # User doesn't exist
         if result.rowcount == 0:
+            conn.rollback()
+
             return (
                 False,
                 "User account not found."
             )
 
-        # OTP is deleted after successful password reset
+        # Delete OTP after successful reset
         conn.execute(
             """
             DELETE FROM password_reset_otps

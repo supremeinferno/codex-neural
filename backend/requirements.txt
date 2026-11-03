@@ -39,3 +39,6 @@ chromadb>=1,<2
 
 # Terminal output
 rich>=13,<14
+
+langchain-groq
+groq

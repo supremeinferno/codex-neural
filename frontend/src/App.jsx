@@ -1,43 +1,160 @@
 import React, { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
 import "./index.css";
 
+import ForgotPassword from "./Forgotpassword.jsx";
+import Dashboard from "./Dashboard";
 import Login from "./login.jsx";
 import Register from "./register.jsx";
 import Individual from "./Individual.jsx";
 
-const API_URL = "http://127.0.0.1:8000";
+import { API_URL } from "./config";
+
+const ADMIN_EMAIL = "codexproject9@gmail.com";
 
 function App() {
-  // ================= AUTH =================
 
   const [authPage, setAuthPage] = useState("login");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [user, setUser] = useState(null);
+
+  // -------------------------------------------------------
+  // SESSION AUTHENTICATION
+  // sessionStorage survives refresh but is cleared when
+  // the browser tab/session is closed.
+  // -------------------------------------------------------
+
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    try {
+      return !!sessionStorage.getItem("codex_user");
+    } catch {
+      return false;
+    }
+  });
+
+  const [user, setUser] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem("codex_user");
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // =======================================================
+  // LOGIN
+  // =======================================================
 
   const handleLogin = (loggedInUser) => {
     setUser(loggedInUser);
+
     setIsLoggedIn(true);
+
     setAuthPage("login");
+
+    setActiveTab("nexus");
+
+    try {
+      sessionStorage.setItem(
+        "codex_user",
+        JSON.stringify(loggedInUser)
+      );
+
+      sessionStorage.setItem(
+        "codex_active_tab",
+        "nexus"
+      );
+    } catch (err) {
+      console.error("Failed to persist session:", err);
+    }
   };
+
+  // =======================================================
+  // LOGOUT
+  // =======================================================
 
   const handleLogout = () => {
     setUser(null);
+
     setIsLoggedIn(false);
+
     setAuthPage("login");
+
+    setActiveTab("nexus");
+
+    setTopic("");
+
+    setReport("");
+
+    setError("");
+
+    try {
+      sessionStorage.removeItem("codex_user");
+      sessionStorage.removeItem("codex_active_tab");
+    } catch (err) {
+      console.error("Failed to clear session:", err);
+    }
   };
 
-  // ================= MAIN TABS =================
+  // =======================================================
+  // ADMIN CHECK
+  // =======================================================
 
-  const [activeTab, setActiveTab] = useState("nexus");
+  const isAdmin =
+    user?.email?.trim().toLowerCase() ===
+    ADMIN_EMAIL.trim().toLowerCase();
 
-  // ================= NEXUS RESEARCH =================
+  // =======================================================
+  // MAIN TABS
+  // =======================================================
+
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      return (
+        sessionStorage.getItem("codex_active_tab") ||
+        "nexus"
+      );
+    } catch {
+      return "nexus";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        "codex_active_tab",
+        activeTab
+      );
+    } catch (err) {
+      console.error(
+        "Failed to persist active tab:",
+        err
+      );
+    }
+  }, [activeTab]);
+
+  // =======================================================
+  // PROTECT ADMIN DASHBOARD
+  // =======================================================
+
+  useEffect(() => {
+    if (activeTab === "dashboard" && !isAdmin) {
+      setActiveTab("nexus");
+    }
+  }, [activeTab, isAdmin]);
+
+  // =======================================================
+  // NEXUS RESEARCH
+  // =======================================================
 
   const [topic, setTopic] = useState("");
+
   const [report, setReport] = useState("");
+
   const [loading, setLoading] = useState(false);
+
   const [error, setError] = useState("");
+
   const [activeStage, setActiveStage] = useState(0);
 
   const stages = [
@@ -46,16 +163,19 @@ function App() {
       title: "Research",
       description: "Searching the web",
     },
+
     {
       number: "02",
       title: "Read",
       description: "Reading sources",
     },
+
     {
       number: "03",
       title: "Write",
       description: "Synthesizing findings",
     },
+
     {
       number: "04",
       title: "Critique",
@@ -63,7 +183,9 @@ function App() {
     },
   ];
 
-  // ---------------- RESEARCH PROGRESS ---------------- //
+  // =======================================================
+  // RESEARCH PROGRESS
+  // =======================================================
 
   useEffect(() => {
     if (!loading) return;
@@ -71,60 +193,85 @@ function App() {
     setActiveStage(0);
 
     const interval = setInterval(() => {
-      setActiveStage((current) =>
-        current < stages.length - 1 ? current + 1 : current
-      );
+      setActiveStage((current) => {
+        if (current < stages.length - 1) {
+          return current + 1;
+        }
+
+        return current;
+      });
     }, 4500);
 
     return () => clearInterval(interval);
   }, [loading]);
 
-  // ---------------- RUN RESEARCH ---------------- //
+  // =======================================================
+  // RUN RESEARCH
+  // =======================================================
 
   const runResearch = async () => {
     if (!topic.trim() || loading) return;
 
     setLoading(true);
+
     setError("");
+
     setReport("");
+
     setActiveStage(0);
 
     try {
-      const response = await fetch(`${API_URL}/api/research`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          topic: topic.trim(),
-        }),
-      });
+      const response = await fetch(
+        `${API_URL}/api/research`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify({
+            topic: topic.trim(),
+          }),
+        }
+      );
 
       if (!response.ok) {
-        throw new Error(`Server returned ${response.status}`);
+        throw new Error(
+          `Server returned ${response.status}`
+        );
       }
 
       const data = await response.json();
 
       if (!data.report) {
-        throw new Error("Backend returned an empty research report.");
+        throw new Error(
+          "Backend returned an empty research report."
+        );
       }
 
       setReport(data.report);
-      setActiveStage(stages.length - 1);
-    } catch (error) {
-      console.error("Research error:", error);
+
+      setActiveStage(
+        stages.length - 1
+      );
+    } catch (err) {
+      console.error(
+        "Research error:",
+        err
+      );
 
       if (
-        error instanceof TypeError &&
-        error.message === "Failed to fetch"
+        err instanceof TypeError &&
+        err.message === "Failed to fetch"
       ) {
         setError(
           "Backend server is not connected. Please start the FastAPI server and try again."
         );
       } else {
         setError(
-          error.message || "Something went wrong. Please try again."
+          err.message ||
+            "Something went wrong. Please try again."
         );
       }
     } finally {
@@ -132,28 +279,48 @@ function App() {
     }
   };
 
-  // ---------------- KEYBOARD HANDLER ---------------- //
+  // =======================================================
+  // KEYBOARD HANDLER
+  // =======================================================
 
   const handleKeyDown = (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey
+    ) {
       event.preventDefault();
+
       runResearch();
     }
   };
 
-  // ---------------- RESET RESEARCH ---------------- //
+  // =======================================================
+  // RESET RESEARCH
+  // =======================================================
 
   const resetResearch = () => {
     setTopic("");
+
     setReport("");
+
     setError("");
+
     setLoading(false);
+
     setActiveStage(0);
+
+    setActiveTab("nexus");
   };
 
-  // ================= LOGIN / REGISTER =================
+  // =======================================================
+  // AUTH SCREEN
+  // =======================================================
 
   if (!isLoggedIn) {
+    // -----------------------------------------------------
+    // REGISTER
+    // -----------------------------------------------------
+
     if (authPage === "register") {
       return (
         <Register
@@ -164,137 +331,265 @@ function App() {
       );
     }
 
+    // -----------------------------------------------------
+    // FORGOT PASSWORD
+    // -----------------------------------------------------
+
+    if (authPage === "forgot-password") {
+      return (
+        <ForgotPassword
+          onBack={() => {
+            setAuthPage("login");
+          }}
+        />
+      );
+    }
+
+    // -----------------------------------------------------
+    // LOGIN
+    // -----------------------------------------------------
+
     return (
       <Login
         onLogin={handleLogin}
         onCreateAccount={() => {
           setAuthPage("register");
         }}
+        onForgotPassword={() => {
+          setAuthPage("forgot-password");
+        }}
       />
     );
   }
 
-  // ================= INDIVIDUAL TAB =================
+  // =======================================================
+  // SHARED BACKGROUND
+  // =======================================================
 
-  if (activeTab === "individual") {
-    return (
-      <div className="app">
-        <div className="ambient ambient-one"></div>
-        <div className="ambient ambient-two"></div>
+  const Background = () => (
+    <>
+      <div className="ambient ambient-one"></div>
 
-        <div className="stars">
-          {Array.from({ length: 28 }).map((_, index) => (
+      <div className="ambient ambient-two"></div>
+
+      <div className="stars">
+        {Array.from({ length: 28 }).map(
+          (_, index) => (
             <span
               key={index}
               className={`star star-${index % 5}`}
             ></span>
-          ))}
+          )
+        )}
+      </div>
+    </>
+  );
+
+  // =======================================================
+  // SHARED NAVBAR
+  // =======================================================
+
+  const Navbar = () => (
+    <nav className="navbar">
+
+      {/* LOGO */}
+
+      <div className="logo">
+        CODEX.
+      </div>
+
+      {/* MODE SWITCHER */}
+
+      <div className="mode-tabs">
+
+        {/* NEXUS */}
+
+        <button
+          type="button"
+          className={`mode-tab ${
+            activeTab === "nexus"
+              ? "active"
+              : ""
+          }`}
+          onClick={() => {
+            setActiveTab("nexus");
+          }}
+        >
+          NEXUS
+        </button>
+
+        {/* INDIVIDUAL */}
+
+        <button
+          type="button"
+          className={`mode-tab ${
+            activeTab === "individual"
+              ? "active"
+              : ""
+          }`}
+          onClick={() => {
+            setActiveTab("individual");
+          }}
+        >
+          INDIVIDUAL
+        </button>
+
+        {/* DASHBOARD - ADMIN ONLY */}
+
+        {isAdmin && (
+          <button
+            type="button"
+            className={`mode-tab admin-tab ${
+              activeTab === "dashboard"
+                ? "active"
+                : ""
+            }`}
+            onClick={() => {
+              if (isAdmin) {
+                setActiveTab("dashboard");
+              }
+            }}
+          >
+            DASHBOARD
+          </button>
+        )}
+      </div>
+
+      {/* RIGHT SIDE */}
+
+      <div
+        className="navbar-right"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "20px",
+        }}
+      >
+
+        {/* STATUS */}
+
+        <div className="status">
+          <span className="status-dot"></span>
+          RESEARCH ENGINE ONLINE
         </div>
 
-        <nav className="navbar">
-          <div className="logo">CODEX.</div>
+        {/* LOGOUT */}
 
-          <div className="mode-tabs">
-            <button
-              className="mode-tab"
-              onClick={() => setActiveTab("individual")}
-            >
-              INDIVIDUAL
-            </button>
+        <button
+          type="button"
+          className="logout-button"
+          onClick={handleLogout}
+        >
+          LOGOUT
+        </button>
 
-            <button
-              className="mode-tab active"
-              onClick={() => setActiveTab("nexus")}
-            >
-              NEXUS
-            </button>
-          </div>
+      </div>
+    </nav>
+  );
 
-          <div className="status">
-            <span className="status-dot"></span>
-            DOCUMENT ANALYZER ONLINE
-          </div>
-        </nav>
+  // =======================================================
+  // INDIVIDUAL PDF ANALYZER
+  // =======================================================
+
+  if (activeTab === "individual") {
+    return (
+      <div className="app">
+        <Background />
+
+        <Navbar />
 
         <Individual />
       </div>
     );
   }
 
-  // ================= NEXUS INTERFACE =================
+  // =======================================================
+  // ADMIN DASHBOARD
+  // =======================================================
+
+  if (activeTab === "dashboard") {
+
+    // Safety check
+    // Non-admin can NEVER access dashboard.
+
+    if (!isAdmin) {
+      return null;
+    }
+
+    return (
+      <div className="app">
+        <Background />
+
+        <Navbar />
+
+        <Dashboard user={user} />
+      </div>
+    );
+  }
+
+  // =======================================================
+  // NEXUS MAIN PAGE
+  // =======================================================
 
   return (
     <div className="app">
-      {/* ================= BACKGROUND ================= */}
+      <Background />
 
-      <div className="ambient ambient-one"></div>
-      <div className="ambient ambient-two"></div>
+      <Navbar />
 
-      <div className="stars">
-        {Array.from({ length: 28 }).map((_, index) => (
-          <span
-            key={index}
-            className={`star star-${index % 5}`}
-          ></span>
-        ))}
-      </div>
-
-      {/* ================= NAVBAR ================= */}
-
-      <nav className="navbar">
-        <div className="logo">NEXUS.</div>
-
-        <div className="mode-tabs">
-          <button
-            className="mode-tab"
-            onClick={() => setActiveTab("individual")}
-          >
-            INDIVIDUAL
-          </button>
-
-          <button
-            className="mode-tab active"
-            onClick={() => setActiveTab("nexus")}
-          >
-            NEXUS
-          </button>
-        </div>
-
-        <div className="status">
-          <span className="status-dot"></span>
-          RESEARCH ENGINE ONLINE
-        </div>
-      </nav>
-
-      {/* ================= LANDING / LOADING ================= */}
+      {/* =================================================
+          LANDING / LOADING
+      ================================================= */}
 
       {!report && (
         <main className="main-stage">
+
           <section className="hero">
+
+            {/* EYEBROW */}
+
             <div className="eyebrow">
               <span></span>
+
               MULTI-AGENT RESEARCH
             </div>
+
+            {/* HERO TITLE */}
 
             <h1>
               Research,
               <br />
-              <span>without the noise.</span>
+
+              <span>
+                without the noise.
+              </span>
             </h1>
 
+            {/* SUBTITLE */}
+
             <p className="subtitle">
-              Ask a question. Let intelligent agents search, read,
-              challenge, and synthesize the signal hidden inside the web.
+              Ask a question. Let intelligent
+              agents search, read, challenge,
+              and synthesize the signal hidden
+              inside the web.
             </p>
 
-            {/* ================= ORBITAL OBJECT ================= */}
+            {/* =================================================
+                ORBITAL SYSTEM
+            ================================================= */}
 
             <div
-              className={`orbital-system ${loading ? "is-loading" : ""
-                }`}
+              className={`orbital-system ${
+                loading
+                  ? "is-loading"
+                  : ""
+              }`}
             >
+
               <div className="orbit orbit-large"></div>
+
               <div className="orbit orbit-medium"></div>
+
               <div className="orbit orbit-small"></div>
 
               <div className="orbital-glow"></div>
@@ -304,19 +599,26 @@ function App() {
               </div>
 
               <div className="orbit-dot dot-one"></div>
+
               <div className="orbit-dot dot-two"></div>
+
               <div className="orbit-dot dot-three"></div>
             </div>
 
-            {/* ================= INPUT ================= */}
+            {/* =================================================
+                RESEARCH INPUT
+            ================================================= */}
 
             {!loading && (
               <>
                 <div className="research-box">
+
                   <textarea
                     value={topic}
                     onChange={(event) =>
-                      setTopic(event.target.value)
+                      setTopic(
+                        event.target.value
+                      )
                     }
                     onKeyDown={handleKeyDown}
                     placeholder="What do you want to investigate?"
@@ -324,186 +626,294 @@ function App() {
                   />
 
                   <button
+                    type="button"
                     onClick={runResearch}
                     disabled={!topic.trim()}
                   >
                     EXPLORE
+
                     <span>↗</span>
                   </button>
                 </div>
 
                 <div className="shortcut">
                   <span>⌘</span>
+
                   ENTER TO RUN
                 </div>
               </>
             )}
 
-            {/* ================= LOADING STATE ================= */}
+            {/* =================================================
+                RESEARCH LOADING
+            ================================================= */}
 
             {loading && (
               <section className="research-progress">
+
                 <div className="progress-header">
+
                   <div>
+
                     <span className="progress-label">
                       RESEARCH IN PROGRESS
                     </span>
 
                     <h2>
                       Investigating
+
                       <span>.</span>
+
                       <span>.</span>
+
                       <span>.</span>
                     </h2>
+
                   </div>
 
                   <div className="progress-topic">
                     "{topic}"
                   </div>
+
                 </div>
 
                 <div className="agent-pipeline">
-                  {stages.map((stage, index) => {
-                    const isActive = index === activeStage;
-                    const isDone = index < activeStage;
 
-                    return (
-                      <React.Fragment key={stage.number}>
-                        <div
-                          className={`agent-stage ${isActive ? "active" : ""
-                            } ${isDone ? "done" : ""}`}
+                  {stages.map(
+                    (stage, index) => {
+
+                      const isActive =
+                        index === activeStage;
+
+                      const isDone =
+                        index < activeStage;
+
+                      return (
+                        <React.Fragment
+                          key={stage.number}
                         >
-                          <div className="stage-number">
-                            {isDone ? "✓" : stage.number}
-                          </div>
 
-                          <div className="stage-info">
-                            <strong>{stage.title}</strong>
+                          <div
+                            className={`agent-stage ${
+                              isActive
+                                ? "active"
+                                : ""
+                            } ${
+                              isDone
+                                ? "done"
+                                : ""
+                            }`}
+                          >
 
-                            <small>
-                              {isActive
-                                ? stage.description
-                                : isDone
+                            <div className="stage-number">
+                              {isDone
+                                ? "✓"
+                                : stage.number}
+                            </div>
+
+                            <div className="stage-info">
+
+                              <strong>
+                                {stage.title}
+                              </strong>
+
+                              <small>
+                                {isActive
+                                  ? stage.description
+                                  : isDone
                                   ? "Complete"
                                   : "Waiting"}
-                            </small>
+                              </small>
+
+                            </div>
+
+                            {isActive && (
+                              <div className="stage-pulse"></div>
+                            )}
+
                           </div>
 
-                          {isActive && (
-                            <div className="stage-pulse"></div>
-                          )}
-                        </div>
-
-                        {index < stages.length - 1 && (
-                          <div
-                            className={`pipeline-connector ${index < activeStage
-                                ? "complete"
-                                : ""
+                          {index <
+                            stages.length - 1 && (
+                            <div
+                              className={`pipeline-connector ${
+                                index <
+                                activeStage
+                                  ? "complete"
+                                  : ""
                               }`}
-                          ></div>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
+                            ></div>
+                          )}
+
+                        </React.Fragment>
+                      );
+                    }
+                  )}
+
                 </div>
 
                 <p className="progress-note">
-                  Nexus is gathering evidence before generating your
-                  report. This may take a moment.
+                  Nexus is gathering evidence
+                  before generating your report.
+                  This may take a moment.
                 </p>
+
               </section>
             )}
 
-            {/* ================= ERROR ================= */}
+            {/* =================================================
+                ERROR
+            ================================================= */}
 
             {error && (
               <div className="error-box">
-                <strong>Something went wrong.</strong>
-                <span>{error}</span>
+
+                <strong>
+                  Something went wrong.
+                </strong>
+
+                <span>
+                  {error}
+                </span>
+
               </div>
             )}
+
           </section>
         </main>
       )}
 
-      {/* ================= REPORT ================= */}
+      {/* =================================================
+          REPORT
+      ================================================= */}
 
       {report && !loading && (
         <main className="report-page">
+
+          {/* REPORT HEADER */}
+
           <section className="report-header">
+
             <div className="report-heading">
+
               <div className="eyebrow">
+
                 <span></span>
+
                 RESEARCH OUTPUT
+
               </div>
 
-              <h1>{topic}</h1>
+              <h1>
+                {topic}
+              </h1>
 
               <p>
-                Synthesized by the Nexus multi-agent research
-                pipeline.
+                Synthesized by the Nexus
+                multi-agent research pipeline.
               </p>
+
             </div>
 
             <button
+              type="button"
               className="new-research"
               onClick={resetResearch}
             >
               <span>+</span>
+
               NEW RESEARCH
             </button>
+
           </section>
 
-          {/* ================= PIPELINE ================= */}
+          {/* REPORT PIPELINE */}
 
           <section className="report-pipeline">
-            {stages.map((stage, index) => (
-              <React.Fragment key={stage.number}>
-                <div className="report-stage">
-                  <span>{stage.number}</span>
 
-                  <div>
-                    <strong>{stage.title}</strong>
-                    <small>{stage.description}</small>
+            {stages.map(
+              (stage, index) => (
+                <React.Fragment
+                  key={stage.number}
+                >
+
+                  <div className="report-stage">
+
+                    <span>
+                      {stage.number}
+                    </span>
+
+                    <div>
+
+                      <strong>
+                        {stage.title}
+                      </strong>
+
+                      <small>
+                        {stage.description}
+                      </small>
+
+                    </div>
+
                   </div>
-                </div>
 
-                {index < stages.length - 1 && (
-                  <div className="report-line"></div>
-                )}
-              </React.Fragment>
-            ))}
+                  {index <
+                    stages.length - 1 && (
+                    <div className="report-line"></div>
+                  )}
+
+                </React.Fragment>
+              )
+            )}
+
           </section>
 
-          {/* ================= REPORT CARD ================= */}
+          {/* REPORT CARD */}
 
           <article className="report-card">
+
             <div className="report-card-top">
-              <span>FINAL RESEARCH REPORT</span>
+
+              <span>
+                FINAL RESEARCH REPORT
+              </span>
 
               <span className="report-status">
                 ● VERIFIED
               </span>
+
             </div>
 
             <div className="report-content">
+
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={[
+                  remarkGfm
+                ]}
                 components={{
+
                   h1: ({ children }) => (
-                    <h1 className="md-h1">{children}</h1>
+                    <h1 className="md-h1">
+                      {children}
+                    </h1>
                   ),
 
                   h2: ({ children }) => (
-                    <h2 className="md-h2">{children}</h2>
+                    <h2 className="md-h2">
+                      {children}
+                    </h2>
                   ),
 
                   h3: ({ children }) => (
-                    <h3 className="md-h3">{children}</h3>
+                    <h3 className="md-h3">
+                      {children}
+                    </h3>
                   ),
 
                   p: ({ children }) => (
-                    <p className="md-p">{children}</p>
+                    <p className="md-p">
+                      {children}
+                    </p>
                   ),
 
                   strong: ({ children }) => (
@@ -513,15 +923,21 @@ function App() {
                   ),
 
                   ul: ({ children }) => (
-                    <ul className="md-ul">{children}</ul>
+                    <ul className="md-ul">
+                      {children}
+                    </ul>
                   ),
 
                   ol: ({ children }) => (
-                    <ol className="md-ol">{children}</ol>
+                    <ol className="md-ol">
+                      {children}
+                    </ol>
                   ),
 
                   li: ({ children }) => (
-                    <li className="md-li">{children}</li>
+                    <li className="md-li">
+                      {children}
+                    </li>
                   ),
 
                   blockquote: ({ children }) => (
@@ -542,66 +958,98 @@ function App() {
                       className="md-link"
                     >
                       {children}
+
                       <span>↗</span>
                     </a>
                   ),
 
                   table: ({ children }) => (
                     <div className="table-wrapper">
-                      <table>{children}</table>
+
+                      <table>
+                        {children}
+                      </table>
+
                     </div>
                   ),
 
                   thead: ({ children }) => (
-                    <thead>{children}</thead>
+                    <thead>
+                      {children}
+                    </thead>
                   ),
 
                   tbody: ({ children }) => (
-                    <tbody>{children}</tbody>
+                    <tbody>
+                      {children}
+                    </tbody>
                   ),
 
                   tr: ({ children }) => (
-                    <tr>{children}</tr>
+                    <tr>
+                      {children}
+                    </tr>
                   ),
 
                   th: ({ children }) => (
-                    <th>{children}</th>
+                    <th>
+                      {children}
+                    </th>
                   ),
 
                   td: ({ children }) => (
-                    <td>{children}</td>
+                    <td>
+                      {children}
+                    </td>
                   ),
                 }}
               >
                 {report}
               </ReactMarkdown>
+
             </div>
           </article>
 
-          {/* ================= BOTTOM CTA ================= */}
+          {/* BOTTOM CTA */}
 
           <section className="bottom-cta">
+
             <div className="cta-orb"></div>
 
             <div>
-              <span>ANOTHER QUESTION?</span>
 
-              <h2>Keep digging.</h2>
+              <span>
+                ANOTHER QUESTION?
+              </span>
+
+              <h2>
+                Keep digging.
+              </h2>
+
             </div>
 
-            <button onClick={resetResearch}>
+            <button
+              type="button"
+              onClick={resetResearch}
+            >
               START NEW RESEARCH
+
               <span>↗</span>
             </button>
+
           </section>
+
         </main>
       )}
 
-      {/* ================= FOOTER ================= */}
+      {/* =================================================
+          FOOTER
+      ================================================= */}
 
       <footer>
+
         <div className="footer-brand">
-          NEXUS<span>.</span>
+          CODEX<span>.</span>
         </div>
 
         <div className="footer-middle">
@@ -611,7 +1059,9 @@ function App() {
         <div className="footer-right">
           MULTI-AGENT INTELLIGENCE
         </div>
+
       </footer>
+
     </div>
   );
 }
