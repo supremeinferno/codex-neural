@@ -137,9 +137,40 @@
 
 ---
 
+# WEEK 5 (Nov 1-7, 2026)
+
+## What I worked on
+
+- Expanded the Individual tab to support uploading and working with multiple PDFs in one session.
+- Added document selection controls so questions and analysis actions can use the selected PDFs.
+- Implemented the four quick actions: Summary, Main Objective, Key Findings, and Methodology.
+- Improved the full-document summary workflow and made each quick action focus on its own analysis task.
+- Refined summary output so page-source chips do not appear after the summary text.
+- Worked on handling upload progress and errors for multiple PDFs.
+
+## What I learned
+
+- How to organize document upload and retrieval when several PDFs are available in one session.
+- How dedicated prompts and retrieval strategies can produce more focused document analysis.
+- How map-reduce summarization can cover long documents while retaining information from later sections.
+- How the interface can distinguish selected documents and show source pages for answers where useful.
+
+## Challenges
+
+- Keeping answers grounded in the correct documents when several PDFs are selected.
+- Ensuring long-document summaries cover the full document, including its ending.
+- Making the Summary, Main Objective, Key Findings, and Methodology actions return distinct, relevant results.
+- Presenting useful page references without adding a long list of page chips after a summary.
+- Handling individual upload failures without blocking other PDFs in the same batch.
+
+---
+
 # Overall Learning
 
 - Gained practical experience in AI chatbot development, React, FastAPI, REST APIs, authentication, OTP, SMTP, PDF processing, vector databases, and AI models.
 - Learned how to move from a Streamlit prototype to a structured React + FastAPI full-stack application.
 - Developed an understanding of how frontend, backend, document processing, vector retrieval, and AI generation can work together as a complete system.
+- Learned how to support multiple PDFs in one session and let users select which documents to use for questions and analysis.
+- Learned how dedicated prompts and retrieval strategies can support focused actions such as summaries, objectives, key findings, and methodology explanations.
+- Learned how to summarize long documents in stages so the results cover the full document, including later sections.
 - Learned how to design, test, optimize, and improve an AI application based on its performance and intended use.
