@@ -2,23 +2,47 @@
 
 CODEX is a multi-agent research assistant with a React front end and a FastAPI back end. It has two modes:
 
-- **CODEX (Nexus research)** – enter any topic. A search agent finds sources, one source is scraped for detail, and a writer agent produces a structured, cited Markdown report.
-- **Individual (PDF analyzer)** – upload a PDF, then ask questions about it or request a full summary. Answers come only from the document and mention page numbers.
+- **CODEX research (Nexus)** — type any topic. A search agent finds sources, the best source is scraped for detail, and a writer agent produces a structured, cited Markdown report.
+- **Individual (PDF analyzer)** — upload a PDF, then ask questions about it or request a full summary. Answers come only from the document and mention page numbers.
 
-Other features: user accounts with email OTP password reset, saved chat history (rename and delete) with a sliding sidebar, copy or download of research reports as Markdown, and an admin dashboard for managing users and login activity.
+Other features: user accounts with email OTP password reset, saved chat history (rename and delete) with a sliding sidebar, copy or download of reports as Markdown, a built-in PDF viewer, and an admin dashboard for managing users and login activity.
 
-## How the research pipeline works
+> **New here?** Read [docs/01-overview.md](docs/01-overview.md) for a plain-language explanation and a glossary of terms, then follow [Getting started](#getting-started) below.
+
+## Documentation
+
+| Document | Covers |
+| --- | --- |
+| [Overview](docs/01-overview.md) | What CODEX does, features, glossary, tech choices |
+| [Architecture](docs/02-architecture.md) | How the parts connect, with step-by-step flow diagrams |
+| [Backend](docs/03-backend.md) | Every Python file and function |
+| [Frontend](docs/04-frontend.md) | Every React component, state and style file |
+| [API reference](docs/05-api-reference.md) | Every endpoint with request and response examples |
+| [Data storage](docs/06-database.md) | SQLite tables and the Chroma vector store |
+| [Security](docs/07-security.md) | What is protected, and known gaps |
+| [Setup and deployment](docs/08-setup-and-deployment.md) | Install, environment variables, deploy, troubleshooting |
+| [Project history](docs/09-project-history.md) | Timeline, team roles and design decisions |
+
+## How it works
+
+### Research pipeline
 
 ```
 Topic ─► Search agent (Tavily) ─► Scrape top URL ─► Writer ─► Report
 ```
 
-1. **Search** – an agent with the `tavily_search` tool collects the best sources.
-2. **Scrape** – the first URL is fetched and cleaned with BeautifulSoup (capped at 6000 characters).
-3. **Write** – the writer turns the search results and scraped text into a report: Introduction, Key Findings, Deeper Analysis, Conclusion, Sources.
-4. **Critic** – defined in `backend/agents.py` but currently switched off in the pipeline.
+1. **Search** — an agent with the `tavily_search` tool runs 1–3 searches and picks 4–6 good sources.
+2. **Scrape** — the first URL is fetched and cleaned with BeautifulSoup (capped at 6000 characters).
+3. **Write** — the writer turns the search results and scraped text into a report: Introduction, Key Findings, Deeper Analysis, Conclusion, Sources.
+4. **Critic** — defined in `backend/agents.py` but switched off to stay within free-tier rate limits.
 
-PDF mode splits each page into chunks, embeds them with Mistral and stores them in a local Chroma database. Questions use MMR retrieval over the chunks, and summaries use text sampled evenly across the whole document.
+### PDF analyzer
+
+```
+PDF ─► PyMuPDF (text per page) ─► 3000-char chunks ─► Mistral embeddings ─► Chroma
+Question ─► MMR retrieval (5 chunks) ─► Groq LLM ─► answer with page numbers
+"Summarize" ─► all chunks, sampled evenly ─► Groq LLM ─► structured summary
+```
 
 ## Tech stack
 
@@ -30,30 +54,36 @@ PDF mode splits each page into chunks, embeds them with Mistral and stores them 
 | Embeddings and vector store | Mistral embeddings, Chroma |
 | Web research | Tavily, requests, BeautifulSoup |
 | PDF parsing | PyMuPDF |
+| Email | Gmail SMTP with an app password |
 
 ## Project structure
 
 ```
 backend/
   main.py        FastAPI app and all API routes
-  auth.py        Login, sessions, password reset email
+  auth.py        Accounts, password hashing, sessions, password reset email
   pipeline.py    Research pipeline (search, scrape, write)
   agents.py      LLM, agent and prompt definitions
   tools.py       tavily_search and scrape_webpage tools
   individual.py  PDF indexing, retrieval and answering
-  api/index.py   Vercel entry point
+  api/index.py   Placeholder Vercel entry point (empty)
 frontend/
   src/App.jsx              App shell, tabs, research page
-  src/Individual.jsx       PDF analyzer
+  src/login.jsx            Sign in
+  src/register.jsx         Create account
+  src/Forgotpassword.jsx   Three-step password reset
+  src/Individual.jsx       PDF analyzer and viewer
   src/NavigationDrawer.jsx Sidebar (new chat, recent chats, account)
   src/ChatHistory.jsx      Full history page
   src/Dashboard.jsx        Admin dashboard
+  src/Atmosphere.jsx       Animated background
   src/styles/globals.css   Design tokens (colours, fonts, radii, shadows, easing)
   src/styles/system.css    Shared states: buttons, focus, ticker, motion
-  src/styles/*.css         Per-page styles (main, auth, individual, dashboard, navbar, navigation)
+  src/styles/*.css         Per-page styles
+docs/      Full project documentation
 diagrams/  Use case, class and activity diagrams
 report/    Project reports
-journals/  Team journals
+journals/  Developer journals and personal reflections
 ```
 
 ## Getting started
@@ -91,7 +121,7 @@ pip install -r backend/requirements.txt
 uvicorn backend.main:app --reload --port 8000
 ```
 
-The API is now at `http://127.0.0.1:8000`. Check `http://127.0.0.1:8000/api/health`.
+Check `http://127.0.0.1:8000/api/health`. Interactive API docs are at `http://127.0.0.1:8000/docs`.
 
 After the first setup, starting the back end only needs:
 
@@ -114,17 +144,15 @@ npm install
 npm run dev
 ```
 
-The front end reads the API address from `VITE_API_URL` in `frontend/.env`. If it is not set, it uses `http://127.0.0.1:8000`.
+Open `http://localhost:5173`. The front end reads the API address from `VITE_API_URL` in `frontend/.env`. If it is not set, it uses `http://127.0.0.1:8000`.
 
-```env
-VITE_API_URL=http://127.0.0.1:8000
-```
-
-If `frontend/.env` points at the deployed back end, you can still use your local one for a single run:
+To use your local back end for a single run when `frontend/.env` points elsewhere:
 
 ```bash
 VITE_API_URL=http://127.0.0.1:8000 npm run dev
 ```
+
+Having trouble? See [Troubleshooting](docs/08-setup-and-deployment.md#troubleshooting).
 
 ## API overview
 
@@ -137,7 +165,7 @@ VITE_API_URL=http://127.0.0.1:8000 npm run dev
 | Chat history | `GET/POST /api/conversations`, `GET/PATCH/DELETE /api/conversations/{id}`, `POST /api/conversations/{id}/messages` |
 | Admin | `GET /api/admin/dashboard`, `DELETE /api/admin/users/{id}`, `DELETE /api/admin/logins/{id}`, `DELETE /api/admin/logins` |
 
-Chat, research, PDF and admin routes need an `Authorization: Bearer <token>` header, which the login response provides. Admin routes also check that the signed-in account is the admin.
+Chat, research, PDF and admin routes need an `Authorization: Bearer <token>` header, which the login response provides. Admin routes also check that the signed-in account is the admin. Full details with examples: [docs/05-api-reference.md](docs/05-api-reference.md).
 
 ## Security
 
@@ -148,15 +176,27 @@ Chat, research, PDF and admin routes need an `Authorization: Bearer <token>` hea
 - **Passwords** must be at least 6 characters.
 - **PDF uploads** are limited to 25 MB. Users can only open their own PDFs and chats.
 
+Known gaps and suggested fixes are listed in [docs/07-security.md](docs/07-security.md#known-gaps-and-suggested-fixes).
+
 ## Deployment notes
 
-- The front end can be deployed to Vercel. Set `VITE_API_URL` to your back end URL.
+- The front end can be deployed to Vercel. Set `VITE_API_URL` to your back end URL. We deployed the back end to Render.
 - Uploaded PDFs and the Chroma index are saved on local disk (`backend/individual_chroma`). This folder is not tracked in git. Serverless hosts such as Vercel have temporary disks, so use a host with persistent storage for the back end, or move these files to external storage.
 - The user database (`backend/users.db`) is tracked in git. Committing it from your machine replaces the copy in the repo.
-- The back end and front end must be deployed together, because admin requests use the session token.
 - A research request can take a while. The front end gives up after 3 minutes.
 - Groq and Mistral free tiers have rate limits. The app retries and shows a friendly message when one is hit.
 
 ## Admin access
 
 The dashboard is available only to the admin email, which is hard-coded as `ADMIN_EMAIL` in `backend/main.py`, `frontend/src/App.jsx` and `frontend/src/Dashboard.jsx`. To use a different admin, change it in all three places. The back end check is the one that enforces access; the front end copies only decide what to show.
+
+## Team
+
+| Member | Roll no. | Main contributions |
+| --- | --- | --- |
+| Pranav Garg | 1024170298 | Full stack and integration, research pipeline, admin dashboard, deployment, UI, security hardening |
+| Harshil Agarwal | 1024170304 | PDF analyzer, OTP password recovery, login page, PDF viewer |
+| Noor | — | Persistent chat history and navigation sidebar |
+| Axenvyy | — | Security work on the `secure` branch (rate limiting, roles, tests) |
+
+See [docs/09-project-history.md](docs/09-project-history.md) for the full timeline and the [journals](journals/) for weekly logs.
