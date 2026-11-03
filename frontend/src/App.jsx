@@ -9,10 +9,20 @@ import Dashboard from "./Dashboard";
 import Login from "./login.jsx";
 import Register from "./register.jsx";
 import Individual from "./Individual.jsx";
+import ChatHistory from "./ChatHistory.jsx";
+import NavigationDrawer from "./NavigationDrawer.jsx";
 
 import { API_URL } from "./config";
 
 const ADMIN_EMAIL = "codexproject9@gmail.com";
+
+const SUGGESTED_TOPICS = [
+  "State of solid-state batteries in 2026",
+  "How do AI agents use tools?",
+  "Microplastics and human health",
+];
+
+const TICKER_ITEMS = ["Search", "Read", "Synthesize", "Cited sources", "PDF Q&A", "Saved chats", "Multi-agent pipeline"];
 
 function App() {
 
@@ -32,6 +42,13 @@ function App() {
     }
   });
 
+  const [token, setToken] = useState(() => sessionStorage.getItem("codex_token") || "");
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [openedConversation, setOpenedConversation] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activePage, setActivePage] = useState("workspace");
+  const [conversationId, setConversationId] = useState(null);
+
   const [user, setUser] = useState(() => {
     try {
       const stored = sessionStorage.getItem("codex_user");
@@ -45,7 +62,9 @@ function App() {
   // LOGIN
   // =======================================================
 
-  const handleLogin = (loggedInUser) => {
+  const handleLogin = (loggedInUser, sessionToken) => {
+    setToken(sessionToken);
+    sessionStorage.setItem("codex_token", sessionToken);
     setUser(loggedInUser);
 
     setIsLoggedIn(true);
@@ -81,20 +100,40 @@ function App() {
     setAuthPage("login");
 
     setActiveTab("nexus");
+    setActivePage("workspace");
+    setDrawerOpen(false);
 
+    const oldToken = sessionStorage.getItem("codex_token");
+    if (oldToken) fetch(`${API_URL}/api/logout`, { method: "POST", headers: { Authorization: `Bearer ${oldToken}` } }).catch(() => {});
+    setToken("");
+    setConversationId(null);
+    setOpenedConversation(null);
     setTopic("");
 
     setReport("");
+    setConversationId(null);
+    setOpenedConversation(null);
 
     setError("");
 
     try {
       sessionStorage.removeItem("codex_user");
+      sessionStorage.removeItem("codex_token");
       sessionStorage.removeItem("codex_active_tab");
     } catch (err) {
       console.error("Failed to clear session:", err);
     }
   };
+
+  useEffect(() => {
+    if (!user) return;
+    if (!token) { handleLogout(); return; }
+    let cancelled = false;
+    fetch(`${API_URL}/api/session`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((response) => { if (!response.ok && !cancelled) handleLogout(); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // =======================================================
   // ADMIN CHECK
@@ -220,14 +259,42 @@ function App() {
 
     setActiveStage(0);
 
+    let timeoutId;
+
     try {
+      let currentConversationId = conversationId;
+      if (!currentConversationId) {
+        const created = await fetch(`${API_URL}/api/conversations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ kind: "research", title: topic.trim() }),
+        });
+        if (!created.ok) throw new Error("Unable to start a saved chat.");
+        const chat = await created.json();
+        currentConversationId = chat.id;
+        setConversationId(chat.id);
+      }
+      await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: "user", content: topic.trim() }),
+      });
+      setHistoryVersion((value) => value + 1);
+
+      const controller = new AbortController();
+      timeoutId = setTimeout(
+        () => controller.abort(),
+        180000
+      );
+
       const response = await fetch(
         `${API_URL}/api/research`,
         {
           method: "POST",
+          signal: controller.signal,
 
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
 
           body: JSON.stringify({
@@ -237,8 +304,17 @@ function App() {
       );
 
       if (!response.ok) {
+        let detail = "";
+
+        try {
+          detail = (await response.json()).detail;
+        } catch {
+          // response had no JSON body
+        }
+
         throw new Error(
-          `Server returned ${response.status}`
+          detail ||
+            `Server returned ${response.status}`
         );
       }
 
@@ -251,6 +327,11 @@ function App() {
       }
 
       setReport(data.report);
+      await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: "assistant", content: data.report }),
+      });
+      setHistoryVersion((value) => value + 1);
 
       setActiveStage(
         stages.length - 1
@@ -261,7 +342,11 @@ function App() {
         err
       );
 
-      if (
+      if (err.name === "AbortError") {
+        setError(
+          "The request timed out. The backend may have stopped or is being rate limited. Please try again."
+        );
+      } else if (
         err instanceof TypeError &&
         err.message === "Failed to fetch"
       ) {
@@ -275,6 +360,7 @@ function App() {
         );
       }
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   };
@@ -282,6 +368,28 @@ function App() {
   // =======================================================
   // KEYBOARD HANDLER
   // =======================================================
+
+  const [copied, setCopied] = useState(false);
+
+  const copyReport = async () => {
+    try {
+      await navigator.clipboard.writeText(report);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (err) {
+      console.error("Failed to copy report:", err);
+    }
+  };
+
+  const downloadReport = () => {
+    const blob = new Blob([report], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${topic.trim().slice(0, 60).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "codex-report"}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleKeyDown = (event) => {
     if (
@@ -302,6 +410,8 @@ function App() {
     setTopic("");
 
     setReport("");
+    setConversationId(null);
+    setOpenedConversation(null);
 
     setError("");
 
@@ -390,10 +500,10 @@ function App() {
   // =======================================================
 
   const Navbar = () => (
+    <>
     <nav className="navbar">
-
+      <button className="menu-toggle" type="button" aria-label="Open navigation menu" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>☰</button>
       {/* LOGO */}
-
       <div className="logo">
         CODEX.
       </div>
@@ -412,10 +522,12 @@ function App() {
               : ""
           }`}
           onClick={() => {
+            setActivePage("workspace");
+            setConversationId(null); setOpenedConversation(null);
             setActiveTab("nexus");
           }}
         >
-          NEXUS
+          CODEX
         </button>
 
         {/* INDIVIDUAL */}
@@ -428,6 +540,8 @@ function App() {
               : ""
           }`}
           onClick={() => {
+            setActivePage("workspace");
+            setConversationId(null); setOpenedConversation(null);
             setActiveTab("individual");
           }}
         >
@@ -446,6 +560,7 @@ function App() {
             }`}
             onClick={() => {
               if (isAdmin) {
+                setActivePage("workspace");
                 setActiveTab("dashboard");
               }
             }}
@@ -473,19 +588,52 @@ function App() {
           RESEARCH ENGINE ONLINE
         </div>
 
-        {/* LOGOUT */}
-
-        <button
-          type="button"
-          className="logout-button"
-          onClick={handleLogout}
-        >
-          LOGOUT
-        </button>
-
       </div>
     </nav>
+    <div className="ticker" aria-hidden="true">
+      <div className="ticker-track">
+        {[...TICKER_ITEMS, ...TICKER_ITEMS].map((item, index) => <span key={index}>{item}</span>)}
+      </div>
+    </div>
+    <NavigationDrawer
+      open={drawerOpen}
+      onClose={() => setDrawerOpen(false)}
+      token={token}
+      version={historyVersion}
+      currentId={conversationId}
+      email={user?.email}
+      onNewChat={() => { setDrawerOpen(false); startNewChat(); }}
+      onSelectChat={(chat) => { setDrawerOpen(false); openSavedChat(chat); }}
+      onHistory={() => { setDrawerOpen(false); setActivePage("history"); }}
+      onSignOut={handleLogout}
+    />
+    </>
   );
+
+  const startNewChat = () => {
+    setOpenedConversation(null);
+    setConversationId(null);
+    setTopic(""); setReport(""); setError(""); setLoading(false);
+    setActiveTab("nexus"); setActivePage("workspace");
+  };
+
+  const openSavedChat = async (chat) => {
+    const response = await fetch(`${API_URL}/api/conversations/${chat.id}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) return;
+    const data = await response.json();
+    setOpenedConversation(data); setConversationId(data.id); setActivePage("workspace");
+    if (data.kind === "pdf") {
+      setActiveTab("individual");
+    } else {
+      const firstQuestion = data.messages.find((message) => message.role === "user");
+      const lastAnswer = [...data.messages].reverse().find((message) => message.role === "assistant");
+      setTopic(firstQuestion?.content || data.title); setReport(lastAnswer?.content || ""); setActiveTab("nexus");
+    }
+  };
+
+  if (activePage === "history") {
+    return <div className="app">{Background()}{Navbar()}<ChatHistory token={token} version={historyVersion} currentId={conversationId} onNew={startNewChat} onSelect={openSavedChat} /></div>;
+  }
 
   // =======================================================
   // INDIVIDUAL PDF ANALYZER
@@ -494,11 +642,9 @@ function App() {
   if (activeTab === "individual") {
     return (
       <div className="app">
-        <Background />
-
-        <Navbar />
-
-        <Individual />
+        {Background()}
+        {Navbar()}
+        <Individual token={token} openedConversation={openedConversation} currentConversationId={conversationId} onConversationChange={(id) => { setConversationId(id); if (id === null) setOpenedConversation(null); setHistoryVersion((value) => value + 1); }} />
       </div>
     );
   }
@@ -518,11 +664,11 @@ function App() {
 
     return (
       <div className="app">
-        <Background />
+        {Background()}
 
-        <Navbar />
+        {Navbar()}
 
-        <Dashboard user={user} />
+        <Dashboard token={token} />
       </div>
     );
   }
@@ -533,9 +679,9 @@ function App() {
 
   return (
     <div className="app">
-      <Background />
+      {Background()}
 
-      <Navbar />
+      {Navbar()}
 
       {/* =================================================
           LANDING / LOADING
@@ -636,10 +782,16 @@ function App() {
                   </button>
                 </div>
 
-                <div className="shortcut">
-                  <span>⌘</span>
+                <div className="topic-suggestions" aria-label="Example topics">
+                  {SUGGESTED_TOPICS.map((suggestion) => (
+                    <button key={suggestion} type="button" onClick={() => setTopic(suggestion)}>
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
 
-                  ENTER TO RUN
+                <div className="shortcut">
+                  <span>↵</span> ENTER TO RUN <span>·</span> <span>⇧ ↵</span> NEW LINE
                 </div>
               </>
             )}
@@ -753,7 +905,7 @@ function App() {
                 </div>
 
                 <p className="progress-note">
-                  Nexus is gathering evidence
+                  CODEX is gathering evidence
                   before generating your report.
                   This may take a moment.
                 </p>
@@ -809,7 +961,7 @@ function App() {
               </h1>
 
               <p>
-                Synthesized by the Nexus
+                Synthesized by the CODEX
                 multi-agent research pipeline.
               </p>
 
@@ -878,9 +1030,19 @@ function App() {
                 FINAL RESEARCH REPORT
               </span>
 
-              <span className="report-status">
-                ● VERIFIED
-              </span>
+              <div className="report-actions">
+                <span className="report-status">
+                  ● VERIFIED
+                </span>
+
+                <button type="button" onClick={copyReport}>
+                  {copied ? "COPIED ✓" : "COPY"}
+                </button>
+
+                <button type="button" onClick={downloadReport}>
+                  DOWNLOAD .MD
+                </button>
+              </div>
 
             </div>
 

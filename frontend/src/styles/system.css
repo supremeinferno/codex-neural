@@ -1,0 +1,402 @@
+/* =========================================================
+   DESIGN SYSTEM LAYER
+   Loaded last. Shared states that every page uses: mono
+   labels, tactile buttons, focus/selection, the ticker,
+   page entrance and reduced motion. Component layout stays
+   in its own stylesheet.
+========================================================= */
+
+
+/* ---------------------------------------------------------
+   BASE STATES
+--------------------------------------------------------- */
+
+::selection {
+  background: var(--gold);
+  color: var(--black);
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold-light);
+  outline-offset: 3px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2824 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: #2a2824 padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gold-dark) padding-box;
+}
+
+
+/* ---------------------------------------------------------
+   MONO LABELS
+   Small uppercase UI text reads as "instrument panel".
+--------------------------------------------------------- */
+
+.eyebrow,
+.individual-eyebrow,
+.login-eyebrow,
+.login-status,
+.status,
+.shortcut,
+.drawer-section-label,
+.drawer-link small,
+.history-chat-copy small,
+.history-chat-actions button,
+.history-new-chat,
+.report-card-top,
+.progress-label,
+.footer-middle,
+.footer-right,
+.login-footer,
+.ticker {
+  font-family: var(--mono);
+}
+
+
+/* ---------------------------------------------------------
+   TACTILE BUTTONS
+   Lift with a hard gold offset on hover, press flat on click.
+--------------------------------------------------------- */
+
+.research-box button,
+.login-button,
+.individual-analyze-button,
+.individual-file-button,
+.new-research,
+.bottom-cta button,
+.history-new-chat,
+.history-page-empty button,
+.drawer-new-chat {
+  transition:
+    transform 0.18s var(--ease-out),
+    box-shadow 0.18s var(--ease-out),
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.research-box button:hover:not(:disabled),
+.login-button:hover:not(:disabled),
+.individual-analyze-button:hover:not(:disabled),
+.individual-file-button:hover,
+.new-research:hover,
+.bottom-cta button:hover,
+.history-new-chat:hover,
+.history-page-empty button:hover,
+.drawer-new-chat:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-hard);
+}
+
+.research-box button:active:not(:disabled),
+.login-button:active:not(:disabled),
+.individual-analyze-button:active:not(:disabled),
+.individual-file-button:active,
+.new-research:active,
+.bottom-cta button:active,
+.history-new-chat:active,
+.history-page-empty button:active,
+.drawer-new-chat:active {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+  transition-duration: 0.06s;
+}
+
+
+/* ---------------------------------------------------------
+   INPUTS
+--------------------------------------------------------- */
+
+.research-box:focus-within {
+  box-shadow:
+    6px 6px 0 rgba(197, 154, 74, 0.18),
+    0 0 45px rgba(180, 130, 50, 0.08);
+}
+
+.login-field input:focus {
+  box-shadow: 4px 4px 0 rgba(197, 154, 74, 0.22);
+}
+
+
+/* ---------------------------------------------------------
+   NAVBAR
+--------------------------------------------------------- */
+
+.mode-tab {
+  transition: color 0.2s ease, background 0.25s var(--ease-out);
+}
+
+.status-dot {
+  animation: beacon 2.4s ease-out infinite;
+}
+
+@keyframes beacon {
+  0% {
+    box-shadow: 0 0 0 0 rgba(111, 191, 143, 0.55);
+  }
+
+  70%,
+  100% {
+    box-shadow: 0 0 0 7px rgba(111, 191, 143, 0);
+  }
+}
+
+
+/* ---------------------------------------------------------
+   TICKER (under the navbar)
+--------------------------------------------------------- */
+
+.ticker {
+  position: relative;
+  z-index: 5;
+
+  overflow: hidden;
+
+  border-bottom: 1px solid rgba(197, 154, 74, 0.16);
+  background: rgba(197, 154, 74, 0.045);
+
+  color: #8d877c;
+
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  user-select: none;
+
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.ticker-track {
+  display: inline-flex;
+  padding: 7px 0;
+
+  animation: marquee 40s linear infinite;
+}
+
+.ticker-track span {
+  padding: 0 20px;
+}
+
+.ticker-track span::before {
+  content: "✦";
+  margin-right: 20px;
+  color: var(--gold);
+}
+
+.ticker:hover .ticker-track {
+  animation-play-state: paused;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+
+/* ---------------------------------------------------------
+   RESEARCH HERO: suggestions + shortcut
+--------------------------------------------------------- */
+
+.topic-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+
+  width: min(790px, 100%);
+  margin-top: 16px;
+}
+
+.topic-suggestions button {
+  padding: 8px 14px;
+
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--muted-light);
+
+  font-size: 12.5px;
+
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s var(--ease-out);
+}
+
+.topic-suggestions button:hover {
+  border-color: rgba(197, 154, 74, 0.5);
+  background: rgba(197, 154, 74, 0.08);
+  color: var(--gold-light);
+  transform: translateY(-2px);
+}
+
+.shortcut {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  margin-top: 18px;
+}
+
+/* No hardware keyboard on touch devices */
+@media (hover: none) {
+  .shortcut {
+    display: none;
+  }
+}
+
+
+/* ---------------------------------------------------------
+   REPORT
+--------------------------------------------------------- */
+
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-actions .report-status {
+  margin-right: 8px;
+}
+
+.report-actions button {
+  padding: 7px 11px;
+
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+
+  background: transparent;
+  color: #9c978e;
+
+  font: inherit;
+
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.report-actions button:hover {
+  border-color: rgba(197, 154, 74, 0.5);
+  background: rgba(197, 154, 74, 0.08);
+  color: var(--gold-light);
+}
+
+.report-card {
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+}
+
+
+/* ---------------------------------------------------------
+   LIST ROWS (history page, drawer)
+--------------------------------------------------------- */
+
+.history-chat-card {
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.25s var(--ease-out),
+    box-shadow 0.25s var(--ease-out);
+}
+
+.history-chat-card:hover {
+  transform: translateX(4px);
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+
+.drawer-chat {
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.drawer-chat.active {
+  box-shadow: inset 2px 0 0 var(--gold-light);
+}
+
+
+/* ---------------------------------------------------------
+   PAGE ENTRANCE
+--------------------------------------------------------- */
+
+.hero,
+.report-page,
+.history-page,
+.individual-page {
+  animation: rise 0.6s var(--ease-out) both;
+}
+
+.history-chat-card {
+  animation: rise 0.5s var(--ease-out) both;
+}
+
+.history-chat-card:nth-child(2) { animation-delay: 0.04s; }
+.history-chat-card:nth-child(3) { animation-delay: 0.08s; }
+.history-chat-card:nth-child(4) { animation-delay: 0.12s; }
+.history-chat-card:nth-child(n + 5) { animation-delay: 0.16s; }
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    translate: 0 14px;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+
+/* ---------------------------------------------------------
+   RESPONSIVE
+--------------------------------------------------------- */
+
+@media (max-width: 760px) {
+  .report-card-top {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 14px 18px;
+  }
+
+  .topic-suggestions button {
+    font-size: 12px;
+  }
+}
+
+
+/* ---------------------------------------------------------
+   REDUCED MOTION
+--------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

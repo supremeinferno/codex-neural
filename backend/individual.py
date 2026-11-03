@@ -5,63 +5,163 @@ import hashlib
 import fitz
 
 from dotenv import load_dotenv
+
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
 from langchain_mistralai import MistralAIEmbeddings
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Loads software-eng/.env (same file auth.py uses)
 load_dotenv(os.path.join(BASE_DIR, "..", ".env"))
-INDIVIDUAL_DB_PATH = os.path.join(BASE_DIR, "individual_chroma")
+
+INDIVIDUAL_DB_PATH = os.path.join(
+    BASE_DIR,
+    "individual_chroma"
+)
+
 COLLECTION_NAME = "individual_documents"
+
+# Document ids are the first 12 hex characters of the file's MD5 hash
 DOCUMENT_ID_PATTERN = re.compile(r"[a-f0-9]{12}")
+
+# Same model your Nexus tab uses
 GROQ_MODEL = "openai/gpt-oss-120b"
+
+# Maximum characters sent to the model for a full-document summary.
+# Lower this if you still hit rate limits, raise it for longer summaries.
 MAX_SUMMARY_CHARACTERS = 30000
 
+
+# =========================================================
+# MODEL HELPERS
+# =========================================================
 
 def load_embeddings():
     return MistralAIEmbeddings()
 
 
 def load_llm():
-    return ChatGroq(model=GROQ_MODEL, api_key=os.getenv("GROQ_API_KEY"), temperature=0, timeout=120, max_retries=0)
+    return ChatGroq(
+        model=GROQ_MODEL,
+        api_key=os.getenv("GROQ_API_KEY"),
+        temperature=0,
+        timeout=120,
+        max_retries=0
+    )
 
 
 def is_rate_limit_error(error):
+    """
+    True if the error is an HTTP 429 from Groq or Mistral.
+    """
+
     status = getattr(error, "status_code", None)
+
     if status is None:
-        status = getattr(getattr(error, "response", None), "status_code", None)
-    return status == 429 or ("429" in str(error) and "rate" in str(error).lower())
+        response = getattr(error, "response", None)
+        status = getattr(response, "status_code", None)
+
+    if status == 429:
+        return True
+
+    return "429" in str(error) and "rate" in str(error).lower()
 
 
 def invoke_with_retry(llm, prompt, attempts=3, wait_seconds=8):
+    """
+    Calls the model. If the service reports a rate limit,
+    waits and tries again before giving up.
+    """
+
+    return run_with_retry(
+        lambda: llm.invoke(prompt),
+        attempts,
+        wait_seconds
+    )
+
+
+def run_with_retry(action, attempts=3, wait_seconds=8):
+    """
+    Runs any call (LLM or embeddings). On a rate limit,
+    waits and tries again before giving up.
+    """
+
     for attempt in range(attempts):
+
         try:
-            return llm.invoke(prompt)
+            return action()
+
         except Exception as error:
-            if not is_rate_limit_error(error) or attempt == attempts - 1:
+
+            if not is_rate_limit_error(error):
                 raise
+
+            if attempt == attempts - 1:
+                raise
+
             time.sleep(wait_seconds * (attempt + 1))
 
+
+# =========================================================
+# FILE HELPERS
+# =========================================================
 
 def make_document_id(file_bytes):
     return hashlib.md5(file_bytes).hexdigest()[:12]
 
 
 def get_pdf_path(document_id):
+    """
+    Returns the saved PDF path for a document id,
+    or None if the id is invalid or the file does not exist.
+    """
+
     if not DOCUMENT_ID_PATTERN.fullmatch(document_id or ""):
         return None
-    path = os.path.join(INDIVIDUAL_DB_PATH, f"{document_id}.pdf")
-    return path if os.path.isfile(path) else None
 
+    pdf_path = os.path.join(
+        INDIVIDUAL_DB_PATH,
+        f"{document_id}.pdf"
+    )
+
+    if not os.path.exists(pdf_path):
+        return None
+
+    return pdf_path
+
+
+# =========================================================
+# PDF PROCESSING
+# =========================================================
 
 def looks_like_heading(text):
     text = text.strip()
+
     if not text or len(text) > 150:
         return False
-    patterns = [r"^\d+(?:\.\d+)*\.?\s+.+", r"^(abstract|introduction|background|related work|methodology|methods|experiments|evaluation|results|discussion|conclusion|limitations|references)$"]
-    return any(re.match(pattern, text, re.IGNORECASE) for pattern in patterns)
+
+    # Sentences and list items end with punctuation; headings do not.
+    if text.endswith((".", ",", ";", ":")):
+        return False
+
+    patterns = [
+        r"^\d+\.\s+.+",
+        r"^\d+\.\d+\s+.+",
+        r"^\d+\.\d+\.\d+\s+.+",
+        r"^(abstract|introduction|background|"
+        r"related work|methodology|methods|"
+        r"experiments|evaluation|results|discussion|"
+        r"conclusion|limitations|references)$"
+    ]
+
+    return any(
+        re.match(pattern, text, re.IGNORECASE)
+        for pattern in patterns
+    )
 
 
 def clean_heading(text):
@@ -70,207 +170,440 @@ def clean_heading(text):
 
 def extract_pdf_documents(pdf_path, document_id, document_name):
     pdf = fitz.open(pdf_path)
+
     documents = []
-    section = "Unknown"
+    current_section = "Unknown"
+
     for page_index, page in enumerate(pdf):
-        lines = []
-        for raw_line in page.get_text("text").splitlines():
-            line = raw_line.strip()
+        page_number = page_index + 1
+
+        text = page.get_text("text")
+
+        if not text.strip():
+            continue
+
+        page_lines = []
+
+        for line in text.splitlines():
+            line = line.strip()
+
             if not line:
                 continue
+
             if looks_like_heading(line):
-                section = clean_heading(line)
-            else:
-                lines.append(line)
-        text = "\n".join(lines)
-        if text.strip():
-            documents.append(Document(page_content=text, metadata={"document_id": document_id, "document_name": document_name, "page": page_index + 1, "section": section, "content_type": "text"}))
+                current_section = clean_heading(line)
+
+            # Keep the line in the text even when it looks like a
+            # heading, so nothing is lost from the index.
+            page_lines.append(line)
+
+        page_text = "\n".join(page_lines)
+
+        if not page_text.strip():
+            continue
+
+        documents.append(
+            Document(
+                page_content=page_text,
+                metadata={
+                    "document_id": document_id,
+                    "document_name": document_name,
+                    "page": page_number,
+                    "section": current_section,
+                    "content_type": "text"
+                }
+            )
+        )
+
     pdf.close()
+
     return documents
 
 
 def chunk_documents(documents):
-    splitter = RecursiveCharacterTextSplitter(chunk_size=3000, chunk_overlap=200, separators=["\n\n", "\n", ". ", " ", ""])
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=3000,
+        chunk_overlap=200,
+        separators=[
+            "\n\n",
+            "\n",
+            ". ",
+            " ",
+            ""
+        ]
+    )
+
     chunks = splitter.split_documents(documents)
+
     for index, chunk in enumerate(chunks):
-        chunk.metadata["chunk_id"] = f"chunk_{index:06d}"
+        chunk.metadata["chunk_id"] = f"chunk_{index}"
+
     return chunks
 
 
 def build_individual_index(pdf_bytes, document_name):
-    os.makedirs(INDIVIDUAL_DB_PATH, exist_ok=True)
+    os.makedirs(
+        INDIVIDUAL_DB_PATH,
+        exist_ok=True
+    )
+
     document_id = make_document_id(pdf_bytes)
-    pdf_path = os.path.join(INDIVIDUAL_DB_PATH, f"{document_id}.pdf")
+
+    pdf_path = os.path.join(
+        INDIVIDUAL_DB_PATH,
+        f"{document_id}.pdf"
+    )
+
     if not os.path.exists(pdf_path):
         with open(pdf_path, "wb") as file:
             file.write(pdf_bytes)
-    try:
-        documents = extract_pdf_documents(pdf_path, document_id, document_name)
-    except Exception as error:
-        return {"success": False, "message": f"Unable to read PDF: {error}", "document_id": document_id, "document_name": document_name, "pages": 0, "chunks": 0}
+
+    documents = extract_pdf_documents(
+        pdf_path,
+        document_id,
+        document_name
+    )
+
     if not documents:
-        return {"success": False, "message": "No readable text was found in the PDF.", "document_id": document_id, "document_name": document_name, "pages": 0, "chunks": 0}
+        return {
+            "success": False,
+            "message": "No readable text was found in the PDF.",
+            "document_id": document_id,
+            "pages": 0,
+            "chunks": 0
+        }
+
     chunks = chunk_documents(documents)
+
     if not chunks:
-        return {"success": False, "message": "Unable to create searchable chunks.", "document_id": document_id, "document_name": document_name, "pages": len(documents), "chunks": 0}
-    vectorstore = Chroma(persist_directory=INDIVIDUAL_DB_PATH, collection_name=COLLECTION_NAME, embedding_function=load_embeddings())
-    existing = vectorstore.get(where={"document_id": document_id}, include=[])
+        return {
+            "success": False,
+            "message": "Unable to create searchable chunks.",
+            "document_id": document_id,
+            "pages": len(documents),
+            "chunks": 0
+        }
+
+    vectorstore = Chroma(
+        persist_directory=INDIVIDUAL_DB_PATH,
+        collection_name=COLLECTION_NAME,
+        embedding_function=load_embeddings()
+    )
+
+    existing = vectorstore.get(
+        where={
+            "document_id": document_id
+        },
+        include=[]
+    )
+
     existing_ids = existing.get("ids", [])
+
     if existing_ids:
-        return {"success": True, "message": "PDF is already indexed.", "document_id": document_id, "document_name": document_name, "pages": len(documents), "chunks": len(existing_ids)}
-    vectorstore.add_documents(chunks)
-    return {"success": True, "message": "PDF indexed successfully.", "document_id": document_id, "document_name": document_name, "pages": len(documents), "chunks": len(chunks)}
+        return {
+            "success": True,
+            "message": "PDF is already indexed.",
+            "document_id": document_id,
+            "document_name": document_name,
+            "pages": len(documents),
+            "chunks": len(existing_ids)
+        }
 
-
-def _validate_document_ids(document_ids):
-    if not isinstance(document_ids, list) or not document_ids:
-        return None, "Select at least one document."
-    valid = []
-    for document_id in document_ids:
-        if not isinstance(document_id, str) or not DOCUMENT_ID_PATTERN.fullmatch(document_id):
-            return None, "Invalid document ID."
-        if not get_pdf_path(document_id):
-            return None, "One or more selected documents were not found."
-        if document_id not in valid:
-            valid.append(document_id)
-    return valid, None
-
-
-def _open_vectorstore():
-    return Chroma(persist_directory=INDIVIDUAL_DB_PATH, collection_name=COLLECTION_NAME, embedding_function=load_embeddings())
-
-
-def _retrieve(vectorstore, document_id, query, k=5, fetch_k=10, sections=None):
-    where = {"document_id": document_id}
-    retriever = vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": k, "fetch_k": fetch_k, "lambda_mult": 0.5, "filter": where})
-    docs = retriever.invoke(query)
-    if sections:
-        matching = [d for d in docs if any(word in str(d.metadata.get("section", "")).lower() for word in sections)]
-        docs = matching or docs
-    return docs
-
-
-def _source(doc):
-    return {"document_id": doc.metadata.get("document_id"), "document_name": doc.metadata.get("document_name", "Document"), "page": doc.metadata.get("page"), "section": doc.metadata.get("section", "Unknown")}
-
-
-def _answer_individual_question(question, document_ids):
-    ids, error = _validate_document_ids(document_ids)
-    if error:
-        return {"success": False, "message": error}
-    vectorstore = _open_vectorstore()
-    contexts = []
-    sources = []
-    for document_id in ids:
-        docs = _retrieve(vectorstore, document_id, question, k=5, fetch_k=12)
-        if not docs:
-            continue
-        name = docs[0].metadata.get("document_name", document_id)
-        contexts.extend([f"DOCUMENT: {name}\nPAGE {d.metadata.get('page', 'Unknown')} ({d.metadata.get('section', 'Unknown')}):\n{d.page_content}" for d in docs])
-        sources.extend(_source(d) for d in docs)
-    if not contexts:
-        return {"success": False, "message": "I could not find relevant information in the selected PDFs."}
-    prompt = f"""You are a document assistant. Answer using ONLY the provided document content. Do not invent facts; say clearly when information is not present. Mention page numbers when useful. Attribute each statement to its specific document. Compare documents when asked, and state when a fact appears in only some documents.
-
-DOCUMENT CONTENT:\n\n{'\n\n'.join(contexts)}
-
-QUESTION:\n{question}"""
-    response = invoke_with_retry(load_llm(), prompt)
-    return {"success": True, "answer": response.content, "sources": sources}
-
-
-def answer_individual_question(question, document_ids):
     try:
-        return _answer_individual_question(question, document_ids if isinstance(document_ids, list) else [document_ids])
+        run_with_retry(lambda: vectorstore.add_documents(chunks))
+
     except Exception as error:
+
+        # Remove partly stored chunks so a retry re-indexes everything.
+        partial = vectorstore.get(
+            where={
+                "document_id": document_id
+            },
+            include=[]
+        ).get("ids", [])
+
+        if partial:
+            vectorstore.delete(ids=partial)
+
         if is_rate_limit_error(error):
-            return {"success": False, "message": "The AI service is busy right now (rate limit). Please wait a minute and try again."}
+            return {
+                "success": False,
+                "message": (
+                    "The AI service is busy right now (rate limit). "
+                    "Please wait a minute and upload the PDF again."
+                ),
+                "document_id": document_id,
+                "pages": len(documents),
+                "chunks": 0
+            }
+
         raise
 
+    return {
+        "success": True,
+        "message": "PDF indexed successfully.",
+        "document_id": document_id,
+        "document_name": document_name,
+        "pages": len(documents),
+        "chunks": len(chunks)
+    }
 
-def _summary_for_document(vectorstore, document_id):
-    result = vectorstore.get(where={"document_id": document_id}, include=["documents", "metadatas"])
-    rows = [{"page": (meta or {}).get("page", 0), "chunk_id": (meta or {}).get("chunk_id", ""), "section": (meta or {}).get("section", "Unknown"), "document_name": (meta or {}).get("document_name", "Document"), "content": content} for content, meta in zip(result.get("documents", []), result.get("metadatas", []))]
-    rows.sort(key=lambda row: (row["page"], row["chunk_id"]))
-    if not rows:
-        return None, []
-    batches, current, size = [], [], 0
-    for row in rows:
-        block = f"Page {row['page']} ({row['section']}):\n{row['content']}"
-        while len(block) > MAX_SUMMARY_CHARACTERS:
-            if current:
-                batches.append("\n\n".join(current)); current, size = [], 0
-            batches.append(block[:MAX_SUMMARY_CHARACTERS])
-            block = block[MAX_SUMMARY_CHARACTERS:]
-        if size + len(block) > MAX_SUMMARY_CHARACTERS and current:
-            batches.append("\n\n".join(current)); current, size = [], 0
-        current.append(block); size += len(block) + 2
-    if current:
-        batches.append("\n\n".join(current))
+
+# =========================================================
+# QUESTION ANSWERING
+# =========================================================
+
+def is_summary_question(question):
+    question_lower = question.lower().strip()
+
+    summary_phrases = [
+        "summarize",
+        "summarise",
+        "summary",
+        "summarize this",
+        "summarise this",
+        "overview of",
+        "give me an overview",
+        "give me a summary",
+        "summarize the document",
+        "summarise the document",
+        "summary of the document",
+        "summary of this document",
+        "what is this paper about",
+        "what is this document about",
+        "explain the whole document",
+        "explain the entire document"
+    ]
+
+    return any(
+        phrase in question_lower
+        for phrase in summary_phrases
+    )
+
+
+def generate_full_document_summary(
+    vectorstore,
+    document_id
+):
+    result = vectorstore.get(
+        where={
+            "document_id": document_id
+        },
+        include=[
+            "documents",
+            "metadatas"
+        ]
+    )
+
+    documents = result.get("documents", [])
+    metadatas = result.get("metadatas", [])
+
+    if not documents:
+        return None
+
+    combined = []
+
+    for content, metadata in zip(documents, metadatas):
+        combined.append(
+            {
+                "page": metadata.get("page", 0),
+                "chunk_id": metadata.get("chunk_id", ""),
+                "section": metadata.get(
+                    "section",
+                    "Unknown"
+                ),
+                "content": content
+            }
+        )
+
+    combined.sort(
+        key=lambda item: (
+            item["page"],
+            item["chunk_id"]
+        )
+    )
+
+    context_parts = []
+
+    for item in combined:
+        context_parts.append(
+            f"Page {item['page']} "
+            f"({item['section']}):\n"
+            f"{item['content']}"
+        )
+
+    full_context = "\n\n".join(context_parts)
+
+    # Keep the request small enough for the model's rate limits.
+    # Instead of cutting off the end, sample parts evenly so the
+    # conclusion and results are still covered in long documents.
+    if len(full_context) > MAX_SUMMARY_CHARACTERS:
+        per_part = MAX_SUMMARY_CHARACTERS // len(context_parts)
+
+        if per_part < 200:
+            # Too many parts: keep an evenly spaced subset of them.
+            keep = max(1, MAX_SUMMARY_CHARACTERS // 1500)
+            step = len(context_parts) / keep
+            context_parts = [
+                context_parts[int(i * step)]
+                for i in range(keep)
+            ]
+            per_part = MAX_SUMMARY_CHARACTERS // len(context_parts)
+
+        full_context = "\n\n".join(
+            part[:per_part] for part in context_parts
+        )
+
     llm = load_llm()
-    partials = []
-    for index, batch in enumerate(batches):
-        prompt = f"Summarize this segment of a document faithfully, preserving its claims, methods, findings, limitations, and page references. Use ONLY its content; do not invent and identify missing details clearly. Segment {index + 1} of {len(batches)}:\n\n{batch}"
-        partials.append(str(invoke_with_retry(llm, prompt).content))
-        if index + 1 < len(batches):
-            time.sleep(2)
-    final_prompt = """Combine the following ordered segment summaries into one structured whole-document summary with sections: Main topic and purpose, Key concepts, Methodology, Findings/results, Arguments, Limitations, Conclusion, Key takeaways. Cover the full document including its ending. Use ONLY the supplied summaries, do not invent, and mention page numbers when useful. If something is not stated, say so clearly.\n\n""" + "\n\n".join(partials)
-    answer = invoke_with_retry(llm, final_prompt).content
-    return answer, [_source(Document(page_content="", metadata={**row, "document_id": document_id})) for row in rows]
+
+    prompt = f"""
+You are an expert document analysis assistant.
+
+Create a comprehensive summary of the uploaded PDF.
+
+Use the provided document content as your ONLY source.
+
+The summary should cover:
+
+1. Main topic and purpose
+2. Important concepts
+3. Methodology or approach
+4. Key findings or results
+5. Important arguments or observations
+6. Limitations, if mentioned
+7. Conclusion
+8. Important details that a reader should remember
+
+Organize the answer with clear headings and concise bullet points.
+
+Do not invent information that is not present in the document.
+
+DOCUMENT CONTENT:
+
+{full_context}
+"""
+
+    response = invoke_with_retry(llm, prompt)
+
+    return response.content
 
 
-def _run_action_for_document(vectorstore, action, document_id):
-    if action == "summary":
-        return _summary_for_document(vectorstore, document_id)
-    query_sections = {
-        "objective": ("abstract introduction background purpose objective aim conclusion", ["abstract", "introduction", "background", "conclusion"], 14),
-        "findings": ("results findings evaluation discussion conclusion outcomes", ["results", "evaluation", "discussion", "conclusion"], 12),
-        "methodology": ("methods methodology approach experiments procedure data analysis", ["method", "approach", "experiment", "procedure"], 12),
+def _answer_individual_question(question, document_id):
+    vectorstore = Chroma(
+        persist_directory=INDIVIDUAL_DB_PATH,
+        collection_name=COLLECTION_NAME,
+        embedding_function=load_embeddings()
+    )
+
+    # Full-document summary mode
+    if is_summary_question(question):
+        answer = generate_full_document_summary(
+            vectorstore,
+            document_id
+        )
+
+        if not answer:
+            return {
+                "success": False,
+                "message": "No indexed content was found for this PDF."
+            }
+
+        return {
+            "success": True,
+            "answer": answer,
+            "sources": []
+        }
+
+    # Normal question mode
+    retriever = vectorstore.as_retriever(
+        search_type="mmr",
+        search_kwargs={
+            "k": 5,
+            "fetch_k": 10,
+            "lambda_mult": 0.5,
+            "filter": {
+                "document_id": document_id
+            }
+        }
+    )
+
+    relevant_documents = run_with_retry(
+        lambda: retriever.invoke(question)
+    )
+
+    if not relevant_documents:
+        return {
+            "success": False,
+            "message": "I could not find relevant information in this PDF."
+        }
+
+    context = "\n\n".join(
+        [
+            f"Page {doc.metadata.get('page', 'Unknown')}:\n"
+            f"{doc.page_content}"
+            for doc in relevant_documents
+        ]
+    )
+
+    llm = load_llm()
+
+    prompt = f"""
+You are a PDF document assistant.
+
+Answer the user's question using ONLY the
+information provided in the PDF context below.
+
+If the answer cannot be found in the context,
+clearly say that the information is not available
+in the uploaded PDF.
+
+Mention page numbers when useful.
+
+PDF CONTEXT:
+
+{context}
+
+USER QUESTION:
+
+{question}
+"""
+
+    response = invoke_with_retry(llm, prompt)
+
+    return {
+        "success": True,
+        "answer": response.content,
+        "sources": [
+            {
+                "page": doc.metadata.get("page"),
+                "section": doc.metadata.get(
+                    "section",
+                    "Unknown"
+                )
+            }
+            for doc in relevant_documents
+        ]
     }
-    query, section_terms, k = query_sections[action]
-    docs = _retrieve(vectorstore, document_id, query, k=k, fetch_k=max(k * 2, 24), sections=section_terms)
-    if not docs:
-        return None, []
-    name = docs[0].metadata.get("document_name", document_id)
-    context = "\n\n".join(f"Page {d.metadata.get('page')} ({d.metadata.get('section', 'Unknown')}):\n{d.page_content}" for d in docs)
-    instructions = {
-        "objective": "Explain what the document is trying to achieve and why, using abstract, introduction, background, or conclusion evidence.",
-        "findings": "Return the key findings as concise bullets, including numbers where present and citing pages.",
-        "methodology": "Explain the methodology or approach step by step, citing pages.",
-    }
-    prompt = f"You are analyzing {name}. {instructions[action]} Use ONLY the provided document content, do not invent, clearly state when something is not in the document, and mention page numbers when useful.\n\nDOCUMENT CONTENT:\n{context}"
-    return invoke_with_retry(load_llm(), prompt).content, [_source(d) for d in docs]
 
 
-def run_individual_action(action, document_ids):
+def answer_individual_question(question, document_id):
+    """
+    Public function used by main.py. Turns rate-limit errors
+    into a friendly message instead of a 500 error.
+    """
+
     try:
-        if action not in {"summary", "objective", "findings", "methodology"}:
-            return {"success": False, "message": "Unknown document action."}
-        ids, error = _validate_document_ids(document_ids)
-        if error:
-            return {"success": False, "message": error}
-        vectorstore = _open_vectorstore()
-        sections, sources = [], []
-        for index, document_id in enumerate(ids):
-            result, docs = _run_action_for_document(vectorstore, action, document_id)
-            if not result:
-                name = os.path.basename(get_pdf_path(document_id))
-                sections.append(f"## {name}\n\nNo indexed content was found for this document.")
-            else:
-                name = docs[0].get("document_name", document_id) if docs else document_id
-                sections.append(f"## {name}\n\n{result}")
-                sources.extend(docs)
-            if index + 1 < len(ids):
-                time.sleep(2)
-        if action == "summary" and len(ids) > 1:
-            time.sleep(2)
-            cross_prompt = "Compare these document summaries. Briefly describe common themes and differences, using ONLY the summaries and not inventing details.\n\n" + "\n\n".join(sections)
-            cross = invoke_with_retry(load_llm(), cross_prompt).content
-            sections.append(f"## ACROSS DOCUMENTS\n\n{cross}")
-        return {"success": True, "answer": "\n\n".join(sections), "sources": sources}
+        return _answer_individual_question(question, document_id)
+
     except Exception as error:
+
         if is_rate_limit_error(error):
-            return {"success": False, "message": "The AI service is busy right now (rate limit). Please wait a minute and try again."}
+            return {
+                "success": False,
+                "message": (
+                    "The AI service is busy right now (rate limit). "
+                    "Please wait a minute and try again."
+                )
+            }
+
         raise
-
-

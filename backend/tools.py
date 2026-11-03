@@ -40,6 +40,9 @@ def tavily_search(query: str) -> list:
     return results
 
 
+MAX_SCRAPE_CHARS = 6000
+
+
 @tool
 def scrape_webpage(url: str) -> str:
     """Scrape and return the full readable text content from a webpage URL."""
@@ -77,7 +80,8 @@ def scrape_webpage(url: str) -> str:
             strip=True
         )
 
-        return text
+        # Cap size so it fits Groq's TPM limit (~4 chars per token)
+        return text[:MAX_SCRAPE_CHARS]
 
     except requests.exceptions.HTTPError as e:
         return f"Unable to scrape webpage because of HTTP error: {e}"

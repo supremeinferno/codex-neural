@@ -3,7 +3,7 @@ import { API_URL } from "./config";
 
 const ADMIN_EMAIL = "codexproject9@gmail.com";
 
-function Dashboard({ user }) {
+function Dashboard({ token }) {
     const [data, setData] = useState({
         total_users: 0,
         total_logins: 0,
@@ -15,7 +15,7 @@ function Dashboard({ user }) {
     const [error, setError] = useState("");
     const [deleting, setDeleting] = useState(null);
 
-    const adminEmail = user?.email || ADMIN_EMAIL;
+    const authHeaders = { Authorization: `Bearer ${token}` };
 
     // =====================================================
     // LOAD DASHBOARD
@@ -27,9 +27,8 @@ function Dashboard({ user }) {
             setError("");
 
             const response = await fetch(
-                `${API_URL}/api/admin/dashboard?email=${encodeURIComponent(
-                    adminEmail
-                )}`
+                `${API_URL}/api/admin/dashboard`,
+                { headers: authHeaders }
             );
 
             const result = await response.json();
@@ -72,11 +71,10 @@ function Dashboard({ user }) {
             setDeleting(`user-${userId}`);
 
             const response = await fetch(
-                `${API_URL}/api/admin/users/${userId}?email=${encodeURIComponent(
-                    adminEmail
-                )}`,
+                `${API_URL}/api/admin/users/${userId}`,
                 {
                     method: "DELETE",
+                    headers: authHeaders,
                 }
             );
 
@@ -111,11 +109,10 @@ function Dashboard({ user }) {
             setDeleting(`login-${activityId}`);
 
             const response = await fetch(
-                `${API_URL}/api/admin/logins/${activityId}?email=${encodeURIComponent(
-                    adminEmail
-                )}`,
+                `${API_URL}/api/admin/logins/${activityId}`,
                 {
                     method: "DELETE",
+                    headers: authHeaders,
                 }
             );
 
@@ -152,11 +149,10 @@ function Dashboard({ user }) {
             setDeleting("all-logins");
 
             const response = await fetch(
-                `${API_URL}/api/admin/logins?email=${encodeURIComponent(
-                    adminEmail
-                )}`,
+                `${API_URL}/api/admin/logins`,
                 {
                     method: "DELETE",
+                    headers: authHeaders,
                 }
             );
 

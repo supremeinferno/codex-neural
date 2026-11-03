@@ -8,6 +8,7 @@ from pathlib import Path
 from email.message import EmailMessage
 from dotenv import load_dotenv
 import os
+from datetime import datetime, timedelta
 
 
 # =========================================================
@@ -27,7 +28,7 @@ SMTP_APP_PASSWORD = os.getenv("SMTP_APP_PASSWORD")
 # DATABASE
 # =========================================================
 
-DB_PATH = BASE_DIR / "users.db"
+DB_PATH = Path(os.getenv("CODEX_DATABASE_PATH", str(BASE_DIR / "users.db")))
 
 
 def get_connection():
@@ -48,17 +49,74 @@ def init_db():
         """
     )
 
+    # Opaque, revocable sessions. Only a hash of the bearer token is stored.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            token_hash TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at TEXT NOT NULL
+        )
+        """
+    )
+
     # OTP table
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS password_reset_otps (
             email TEXT PRIMARY KEY,
             otp TEXT NOT NULL,
-            expires REAL NOT NULL
+            expires REAL NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0
         )
         """
     )
 
+    # Older databases were created without the attempts column
+    otp_columns = [row[1] for row in conn.execute("PRAGMA table_info(password_reset_otps)")]
+    if "attempts" not in otp_columns:
+        conn.execute("ALTER TABLE password_reset_otps ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+
+    conn.commit()
+    conn.close()
+
+
+
+def create_session(user_id):
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat(timespec="seconds")
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO auth_sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+        (token_hash, user_id, expires_at),
+    )
+    conn.commit()
+    conn.close()
+    return token
+
+
+def get_user_for_session(token):
+    if not token:
+        return None
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT users.id, users.email FROM auth_sessions
+           JOIN users ON users.id = auth_sessions.user_id
+           WHERE auth_sessions.token_hash = ? AND auth_sessions.expires_at > ?""",
+        (token_hash, datetime.utcnow().isoformat(timespec="seconds")),
+    ).fetchone()
+    conn.close()
+    return {"id": row[0], "email": row[1]} if row else None
+
+
+def revoke_session(token):
+    if not token:
+        return
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    conn = get_connection()
+    conn.execute("DELETE FROM auth_sessions WHERE token_hash = ?", (token_hash,))
     conn.commit()
     conn.close()
 
@@ -67,10 +125,39 @@ def init_db():
 # PASSWORD
 # =========================================================
 
-def hash_password(password):
-    return hashlib.sha256(
-        password.encode("utf-8")
-    ).hexdigest()
+# Stored format: pbkdf2_sha256$<iterations>$<salt hex>$<hash hex>
+PASSWORD_HASH_ITERATIONS = 600_000
+
+MIN_PASSWORD_LENGTH = 6
+
+
+def hash_password(password, salt=None, iterations=PASSWORD_HASH_ITERATIONS):
+    salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        bytes.fromhex(salt),
+        iterations,
+    ).hex()
+    return f"pbkdf2_sha256${iterations}${salt}${digest}"
+
+
+def _legacy_hash(password):
+    # Accounts created before salted hashing stored a plain SHA-256 digest.
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def verify_password(password, stored):
+    if stored.startswith("pbkdf2_sha256$"):
+        _, iterations, salt, _ = stored.split("$")
+        candidate = hash_password(password, salt, int(iterations))
+    else:
+        candidate = _legacy_hash(password)
+    return secrets.compare_digest(candidate, stored)
+
+
+def needs_rehash(stored):
+    return not stored.startswith(f"pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}$")
 
 
 # =========================================================
@@ -83,6 +170,9 @@ def register_user(email, password):
 
     if not email or not password:
         return False, "Email and password are required."
+
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return False, f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
 
     conn = get_connection()
 
@@ -119,28 +209,34 @@ def authenticate_user(email, password):
 
     conn = get_connection()
 
-    user = conn.execute(
-        """
-        SELECT id, email
-        FROM users
-        WHERE email = ?
-        AND password = ?
-        """,
-        (
-            email,
-            hash_password(password),
-        ),
-    ).fetchone()
+    try:
+        user = conn.execute(
+            """
+            SELECT id, email, password
+            FROM users
+            WHERE email = ?
+            """,
+            (email,),
+        ).fetchone()
 
-    conn.close()
+        if not user or not verify_password(password, user[2]):
+            return None
 
-    if user:
+        # Upgrade legacy SHA-256 hashes the next time the user signs in
+        if needs_rehash(user[2]):
+            conn.execute(
+                "UPDATE users SET password = ? WHERE id = ?",
+                (hash_password(password), user[0]),
+            )
+            conn.commit()
+
         return {
             "id": user[0],
             "email": user[1],
         }
 
-    return None
+    finally:
+        conn.close()
 
 
 # =========================================================
@@ -148,6 +244,9 @@ def authenticate_user(email, password):
 # =========================================================
 
 OTP_EXPIRATION_SECONDS = 5 * 60
+
+# After this many wrong guesses the OTP is discarded and a new one must be requested
+OTP_MAX_ATTEMPTS = 5
 
 
 # =========================================================
@@ -385,7 +484,33 @@ def verify_otp(email, otp):
         return False, "OTP has expired."
 
     # Check OTP
-    if otp != stored_otp:
+    if not secrets.compare_digest(otp, stored_otp):
+
+        conn = get_connection()
+
+        try:
+            conn.execute(
+                """
+                UPDATE password_reset_otps
+                SET attempts = attempts + 1
+                WHERE email = ?
+                """,
+                (email,),
+            )
+
+            conn.execute(
+                """
+                DELETE FROM password_reset_otps
+                WHERE email = ? AND attempts >= ?
+                """,
+                (email, OTP_MAX_ATTEMPTS),
+            )
+
+            conn.commit()
+
+        finally:
+            conn.close()
+
         return False, "Invalid OTP."
 
     return True, "OTP verified successfully."
@@ -408,10 +533,10 @@ def reset_password(
     if not new_password:
         return False, "New password is required."
 
-    if len(new_password) < 6:
+    if len(new_password) < MIN_PASSWORD_LENGTH:
         return (
             False,
-            "Password must be at least 6 characters."
+            f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
         )
 
     # Verify OTP
