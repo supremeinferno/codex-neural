@@ -188,6 +188,12 @@ function App() {
 
   const [topic, setTopic] = useState("");
 
+  const [technicalMode, setTechnicalMode] = useState(false);
+
+  const [clarifying, setClarifying] = useState(false);
+
+  const [reviewPrompt, setReviewPrompt] = useState(null);
+
   const [report, setReport] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -248,8 +254,9 @@ function App() {
   // RUN RESEARCH
   // =======================================================
 
-  const runResearch = async () => {
-    if (!topic.trim() || loading) return;
+  const runResearch = async (prompt = topic.trim()) => {
+    const researchTopic = prompt.trim();
+    if (!researchTopic || loading) return;
 
     setLoading(true);
 
@@ -267,7 +274,7 @@ function App() {
         const created = await fetch(`${API_URL}/api/conversations`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ kind: "research", title: topic.trim() }),
+          body: JSON.stringify({ kind: "research", title: researchTopic }),
         });
         if (!created.ok) throw new Error("Unable to start a saved chat.");
         const chat = await created.json();
@@ -276,7 +283,7 @@ function App() {
       }
       await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role: "user", content: topic.trim() }),
+        body: JSON.stringify({ role: "user", content: researchTopic }),
       });
       setHistoryVersion((value) => value + 1);
 
@@ -298,7 +305,7 @@ function App() {
           },
 
           body: JSON.stringify({
-            topic: topic.trim(),
+            topic: researchTopic,
           }),
         }
       );
@@ -365,6 +372,60 @@ function App() {
     }
   };
 
+  const beginResearch = async () => {
+    if (!topic.trim() || loading || clarifying) return;
+
+    setError("");
+
+    if (!technicalMode) {
+      runResearch(topic);
+      return;
+    }
+
+    setClarifying(true);
+    try {
+      const response = await fetch(`${API_URL}/api/research/clarify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ topic: topic.trim() }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || `Server returned ${response.status}`);
+      }
+      if (!data.success || typeof data.topic !== "string" || !data.topic.trim()) {
+        throw new Error(data.message || "The technical rewrite was empty.");
+      }
+
+      setReviewPrompt(data.topic.trim());
+    } catch (err) {
+      console.error("Technical prompt rewrite error:", err);
+      if (err instanceof TypeError && err.message === "Failed to fetch") {
+        setError("Backend server is not connected. Please try again.");
+      } else {
+        setError(err.message || "Unable to rewrite the research prompt.");
+      }
+    } finally {
+      setClarifying(false);
+    }
+  };
+
+  const approveResearchPrompt = () => {
+    const finalPrompt = reviewPrompt.trim();
+    if (!finalPrompt) {
+      setError("The research prompt cannot be empty.");
+      return;
+    }
+
+    setTopic(finalPrompt);
+    setReviewPrompt(null);
+    runResearch(finalPrompt);
+  };
+
   // =======================================================
   // KEYBOARD HANDLER
   // =======================================================
@@ -394,11 +455,12 @@ function App() {
   const handleKeyDown = (event) => {
     if (
       event.key === "Enter" &&
-      !event.shiftKey
+      !event.shiftKey &&
+      reviewPrompt === null
     ) {
       event.preventDefault();
 
-      runResearch();
+      beginResearch();
     }
   };
 
@@ -408,7 +470,7 @@ function App() {
 
   const resetResearch = () => {
     setTopic("");
-
+    setReviewPrompt(null);
     setReport("");
     setConversationId(null);
     setOpenedConversation(null);
@@ -613,11 +675,13 @@ function App() {
   const startNewChat = () => {
     setOpenedConversation(null);
     setConversationId(null);
+    setReviewPrompt(null);
     setTopic(""); setReport(""); setError(""); setLoading(false);
     setActiveTab("nexus"); setActivePage("workspace");
   };
 
   const openSavedChat = async (chat) => {
+    setReviewPrompt(null);
     const response = await fetch(`${API_URL}/api/conversations/${chat.id}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) return;
     const data = await response.json();
@@ -755,7 +819,7 @@ function App() {
                 RESEARCH INPUT
             ================================================= */}
 
-            {!loading && (
+            {!loading && reviewPrompt === null && (
               <>
                 <div className="research-box">
 
@@ -769,18 +833,33 @@ function App() {
                     onKeyDown={handleKeyDown}
                     placeholder="What do you want to investigate?"
                     rows="2"
+                    disabled={clarifying}
                   />
 
                   <button
                     type="button"
-                    onClick={runResearch}
-                    disabled={!topic.trim()}
+                    onClick={beginResearch}
+                    disabled={!topic.trim() || clarifying}
                   >
-                    EXPLORE
+                    {clarifying
+                      ? "REFINING..."
+                      : technicalMode
+                      ? "REVIEW PROMPT"
+                      : "EXPLORE"}
 
                     <span>↗</span>
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  className={`technical-mode-toggle ${technicalMode ? "active" : ""}`}
+                  aria-pressed={technicalMode}
+                  onClick={() => setTechnicalMode((enabled) => !enabled)}
+                  disabled={clarifying}
+                >
+                  TECHNICAL MODE {technicalMode ? "ON" : "OFF"}
+                </button>
 
                 <div className="topic-suggestions" aria-label="Example topics">
                   {SUGGESTED_TOPICS.map((suggestion) => (
@@ -794,6 +873,43 @@ function App() {
                   <span>↵</span> ENTER TO RUN <span>·</span> <span>⇧ ↵</span> NEW LINE
                 </div>
               </>
+            )}
+
+            {!loading && reviewPrompt !== null && (
+              <section className="technical-review">
+                <p>
+                  Review and edit the interpreted research prompt before it is sent
+                  to research. Your original prompt has not been added to history.
+                </p>
+                <p className="technical-original-prompt">
+                  Original prompt: {topic}
+                </p>
+                <textarea
+                  value={reviewPrompt}
+                  onChange={(event) => setReviewPrompt(event.target.value)}
+                  aria-label="Review the interpreted research prompt"
+                  rows="7"
+                />
+                <div className="technical-review-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewPrompt(null);
+                      setError("");
+                    }}
+                  >
+                    BACK TO ORIGINAL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={approveResearchPrompt}
+                    disabled={!reviewPrompt.trim()}
+                  >
+                    APPROVE &amp; RESEARCH
+                    <span>↗</span>
+                  </button>
+                </div>
+              </section>
             )}
 
             {/* =================================================

@@ -78,6 +78,16 @@ Failures: "No OTP request found.", "OTP has expired.", "Invalid OTP."
 
 ## Research
 
+### `POST /api/research/clarify` — protected
+```json
+{"topic": "How do large language models use tools?"}
+```
+→ `{"success": true, "topic": "Research the mechanisms ..."}`
+
+Returns an editable research-prompt draft. This endpoint does not start research
+or write to conversation history; the frontend sends the user's approved prompt
+to `/api/research`.
+
 ### `POST /api/research` — protected
 ```json
 {"topic": "Microplastics and human health"}
