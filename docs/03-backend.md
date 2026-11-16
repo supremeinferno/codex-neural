@@ -46,7 +46,7 @@ See [05-api-reference.md](05-api-reference.md) for full details. In short:
 
 - **Auth:** `register`, `login`, `logout`, `session_info`, `forgot_password`, `verify_otp_endpoint`, `reset_password_endpoint`
 - **Chats:** `list_conversations`, `create_conversation`, `get_conversation`, `rename_conversation`, `delete_conversation`, `save_message`
-- **Research:** `research` — calls `run_research_pipeline` and turns rate-limit errors into a readable message
+- **Research:** `clarify_research_prompt` — returns an editable prompt draft without saving history; `research` — calls `run_research_pipeline` and turns rate-limit errors into a readable message
 - **PDF:** `upload_individual_pdf`, `get_individual_pdf`, `individual_chat`
 - **Admin:** `admin_dashboard`, `admin_delete_user`, `admin_delete_login`, `admin_clear_logins`
 - **Health:** `health_check`
@@ -79,7 +79,12 @@ Loads `SMTP_EMAIL` and `SMTP_APP_PASSWORD` from the root `.env`, then runs `init
 
 ## `pipeline.py` — the research pipeline
 
-One public function: `run_research_pipeline(topic) -> dict`.
+One public function: `run_research_pipeline(topic) -> dict`. It returns a
+concise `title` parsed from the writer's `TITLE:`/`REPORT:` output and the
+Markdown body in `report`. Titles are normalized and capped at 80 characters.
+If the writer does not return both a non-empty title and report in the expected
+format, the pipeline derives a title from the first non-empty line of the
+submitted topic and preserves the writer's complete output as the report.
 
 | Step | Code | Output stored in `state` |
 | --- | --- | --- |
@@ -91,6 +96,15 @@ One public function: `run_research_pipeline(topic) -> dict`.
 Scraping is done directly instead of through a second agent. This saves one LLM call per request, which matters on Groq's free tier.
 
 Run it alone with `python -m backend.pipeline`.
+
+## `technical.py` — technical prompt rewrite
+
+`rewrite_research_prompt(topic)` uses the shared Groq LLM to return one
+technically clearer research prompt. The authenticated `/api/research/clarify`
+route exposes this as a separate pre-research step; the user reviews and edits
+the draft before the existing research endpoint is called. It does not create
+or write to a conversation. History is still owned by the normal research
+request and stores the final submitted topic and report only.
 
 ## `agents.py` — LLM, agents and prompts
 

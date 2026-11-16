@@ -477,6 +477,9 @@ The summary should cover:
 Organize the answer with clear headings and concise bullet points.
 
 Do not invent information that is not present in the document.
+Render mathematical expressions with standard LaTeX delimiters: use
+$...$ for inline math and $$...$$ for display equations. Do not put
+ordinary currency values inside math delimiters.
 
 DOCUMENT CONTENT:
 
@@ -558,6 +561,9 @@ clearly say that the information is not available
 in the uploaded PDF.
 
 Mention page numbers when useful.
+Render mathematical expressions with standard LaTeX delimiters: use
+$...$ for inline math and $$...$$ for display equations. Do not put
+ordinary currency values inside math delimiters.
 
 PDF CONTEXT:
 

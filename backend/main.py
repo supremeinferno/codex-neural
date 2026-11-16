@@ -17,6 +17,7 @@ from fastapi import Depends
 # =========================================================
 
 from backend.pipeline import run_research_pipeline
+from backend.technical import rewrite_research_prompt
 
 from backend.auth import (
     register_user,
@@ -630,6 +631,39 @@ def research(
         )
 
     return result
+
+
+@app.post("/api/research/clarify", dependencies=[Depends(require_user)])
+def clarify_research_prompt(
+    request: ResearchRequest,
+):
+    if not request.topic.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Please enter a research prompt.",
+        )
+
+    try:
+        rewritten_prompt = rewrite_research_prompt(request.topic.strip())
+    except Exception as error:
+        print(f"Technical prompt rewrite failed: {error}")
+        message = str(error)
+
+        if "rate_limit" in message or "429" in message or "413" in message:
+            message = (
+                "The AI provider's rate limit was hit. "
+                "Please wait a minute and try again."
+            )
+
+        raise HTTPException(
+            status_code=500,
+            detail=message[:300],
+        ) from error
+
+    return {
+        "success": True,
+        "topic": rewritten_prompt,
+    }
 
 
 # =========================================================

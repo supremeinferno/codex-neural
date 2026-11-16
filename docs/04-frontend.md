@@ -51,13 +51,19 @@ The largest file. It holds the shared state and renders the research page itself
 | `handleLogin(user, token)` | Saves the session and opens the research tab. |
 | `handleLogout()` | Calls `POST /api/logout`, clears all state and `sessionStorage`. |
 | Session check (`useEffect` on mount) | Calls `GET /api/session`; signs out if the token is no longer valid. |
-| Research submit | Creates a chat, saves the topic, calls `POST /api/research` with a 3-minute timeout, shows the report, saves it. |
+| Research submit | Runs the optional rewrite/review step when Technical mode is enabled; after approval (or immediately in normal mode), creates a chat, saves the final topic, calls `POST /api/research` with a 3-minute timeout, shows the report, and saves it. |
 | Copy / Download | Copies the report to the clipboard, or downloads it as `<topic-slug>.md`. |
 | `startNewChat()` | Clears the current chat and returns to the research tab. |
 | `openSavedChat(chat)` | Loads a saved chat and switches to the right tab for its `kind`. |
 | `Navbar()`, `Background()` | Shared top bar (with mode tabs and menu button) and animated background. |
 
-**UI details:** suggested topic chips (`SUGGESTED_TOPICS`), a scrolling ticker (`TICKER_ITEMS`), and a four-stage progress display (Research, Read, Write, Critique) that advances on a timer while the request runs.
+**UI details:** suggested topic chips (`SUGGESTED_TOPICS`), a scrolling ticker (`TICKER_ITEMS`), and a four-stage progress display (Research, Read, Write, Critique) that advances on a timer while the request runs. The stages are cosmetic; the backend does not stream progress.
+
+**Technical mode:** The Research page has an optional Technical mode toggle. When enabled, submitting a topic calls `POST /api/research/clarify` and opens an editable review of the returned interpretation. Research does not start until approval; the approved text is sent through the ordinary research endpoint. The rewrite step does not create history. The final prompt sent to research and its report are the only messages saved. With the toggle off, the existing direct submit flow is used.
+
+**Report title and prompt:** The report view uses the backend's concise `title` as its heading and shows the submitted prompt below it. Long prompt text is inside a native `<details>` disclosure with a short preview, in both the progress and report views. The editable review draft and final report remain expanded. The title is prepended as a Markdown heading to the existing saved assistant message, so reopening history recovers the title without changing the conversation schema.
+
+**Math:** Research reports and PDF answers render Markdown math with `remark-math` and KaTeX (`throwOnError: false`); Vite emits a separate math-rendering chunk with KaTeX styles/fonts. The shared `src/mathMarkdown.js` normalizer converts `\(...\)` and `\[...\]`, and heuristically recognizes standalone formula paragraphs (including bracket-wrapped equations) and selected parenthetical math expressions. It skips fenced and inline code to avoid treating code as math. Generated formulas should use `$...$` inline and `$$...$$` for display equations; the heuristics target common alternate output, not arbitrary LaTeX prose.
 
 `isAdmin` compares the user's email with `ADMIN_EMAIL`. It only decides whether the Dashboard tab is shown. The backend enforces admin access separately.
 

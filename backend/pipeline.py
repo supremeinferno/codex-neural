@@ -9,6 +9,47 @@ from backend.agents import (
 from backend.tools import scrape_webpage
 
 
+REPORT_TITLE_MAX_LENGTH = 80
+
+
+def _shorten_report_title(title: str) -> str:
+    title = re.sub(r"\s+", " ", title).strip()
+    if len(title) <= REPORT_TITLE_MAX_LENGTH:
+        return title
+
+    shortened = title[: REPORT_TITLE_MAX_LENGTH - 1].rsplit(" ", 1)[0].strip()
+    if not shortened:
+        shortened = title[: REPORT_TITLE_MAX_LENGTH - 1]
+    return f"{shortened}…"
+
+
+def _fallback_report_title(topic: str) -> str:
+    first_line = next(
+        (line.strip() for line in topic.splitlines() if line.strip()),
+        "Research report",
+    )
+    title = re.sub(r"^#+\s*", "", first_line)
+    return _shorten_report_title(title)
+
+
+def _parse_report_output(topic: str, generated_output: str) -> tuple[str, str]:
+    match = re.match(
+        r"\s*TITLE:[ \t]*(?P<title>[^\r\n]+)\r?\n"
+        r"(?:[ \t]*\r?\n)*[ \t]*REPORT:[ \t]*\r?\n"
+        r"(?P<report>[\s\S]*)\Z",
+        generated_output,
+        flags=re.IGNORECASE,
+    )
+
+    if match:
+        title = match.group("title").strip().strip("\"'`# ")
+        report = match.group("report").strip()
+        if title and report:
+            return _shorten_report_title(title), report
+
+    return _fallback_report_title(topic), generated_output.strip()
+
+
 def run_research_pipeline(topic: str) -> dict:
 
     state = {}
@@ -89,10 +130,14 @@ def run_research_pipeline(topic: str) -> dict:
         f"{state['scraped_content'][:6000]}"
     )
 
-    state["report"] = writer_chain.invoke({
+    generated_output = writer_chain.invoke({
         "topic": topic,
         "research": research_combined,
     })
+    state["title"], state["report"] = _parse_report_output(
+        topic,
+        generated_output,
+    )
 
     print("\nFinal Report:\n")
     print(state["report"])

@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { normalizeMathMarkdown } from "./mathMarkdown";
 
 import "./index.css";
 
@@ -23,6 +27,35 @@ const SUGGESTED_TOPICS = [
 ];
 
 const TICKER_ITEMS = ["Search", "Read", "Synthesize", "Cited sources", "PDF Q&A", "Saved chats", "Multi-agent pipeline"];
+
+const promptPreview = (prompt, maxLength = 120) => {
+  const text = prompt.replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+};
+
+const createFallbackReportTitle = (prompt) => {
+  const firstLine = prompt
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  const title = (firstLine || "Research report")
+    .replace(/^#+\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (title.length <= 80) return title;
+  const shortened = title.slice(0, 79).replace(/\s+\S*$/, "").trim();
+  return `${shortened || title.slice(0, 79)}…`;
+};
+
+const readSavedReport = (content) => {
+  const match = content.match(/^# (?!\d+\.)[^\r\n]+\r?\n\r?\n([\s\S]*)$/);
+  if (!match) return { title: "", report: content };
+
+  const title = content.split(/\r?\n/, 1)[0].replace(/^#\s*/, "").trim();
+  return { title, report: match[1] };
+};
 
 function App() {
 
@@ -111,6 +144,7 @@ function App() {
     setTopic("");
 
     setReport("");
+    setReportTitle("");
     setConversationId(null);
     setOpenedConversation(null);
 
@@ -188,7 +222,15 @@ function App() {
 
   const [topic, setTopic] = useState("");
 
+  const [technicalMode, setTechnicalMode] = useState(false);
+
+  const [clarifying, setClarifying] = useState(false);
+
+  const [reviewPrompt, setReviewPrompt] = useState(null);
+
   const [report, setReport] = useState("");
+
+  const [reportTitle, setReportTitle] = useState("");
 
   const [loading, setLoading] = useState(false);
 
@@ -248,8 +290,9 @@ function App() {
   // RUN RESEARCH
   // =======================================================
 
-  const runResearch = async () => {
-    if (!topic.trim() || loading) return;
+  const runResearch = async (prompt = topic.trim()) => {
+    const researchTopic = prompt.trim();
+    if (!researchTopic || loading) return;
 
     setLoading(true);
 
@@ -267,7 +310,7 @@ function App() {
         const created = await fetch(`${API_URL}/api/conversations`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ kind: "research", title: topic.trim() }),
+          body: JSON.stringify({ kind: "research", title: researchTopic }),
         });
         if (!created.ok) throw new Error("Unable to start a saved chat.");
         const chat = await created.json();
@@ -276,7 +319,7 @@ function App() {
       }
       await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role: "user", content: topic.trim() }),
+        body: JSON.stringify({ role: "user", content: researchTopic }),
       });
       setHistoryVersion((value) => value + 1);
 
@@ -298,7 +341,7 @@ function App() {
           },
 
           body: JSON.stringify({
-            topic: topic.trim(),
+            topic: researchTopic,
           }),
         }
       );
@@ -327,9 +370,16 @@ function App() {
       }
 
       setReport(data.report);
+      const title = typeof data.title === "string" && data.title.trim()
+        ? data.title.trim()
+        : createFallbackReportTitle(researchTopic);
+      setReportTitle(title);
       await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role: "assistant", content: data.report }),
+        body: JSON.stringify({
+          role: "assistant",
+          content: `# ${title}\n\n${data.report}`,
+        }),
       });
       setHistoryVersion((value) => value + 1);
 
@@ -365,6 +415,60 @@ function App() {
     }
   };
 
+  const beginResearch = async () => {
+    if (!topic.trim() || loading || clarifying) return;
+
+    setError("");
+
+    if (!technicalMode) {
+      runResearch(topic);
+      return;
+    }
+
+    setClarifying(true);
+    try {
+      const response = await fetch(`${API_URL}/api/research/clarify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ topic: topic.trim() }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || `Server returned ${response.status}`);
+      }
+      if (!data.success || typeof data.topic !== "string" || !data.topic.trim()) {
+        throw new Error(data.message || "The technical rewrite was empty.");
+      }
+
+      setReviewPrompt(data.topic.trim());
+    } catch (err) {
+      console.error("Technical prompt rewrite error:", err);
+      if (err instanceof TypeError && err.message === "Failed to fetch") {
+        setError("Backend server is not connected. Please try again.");
+      } else {
+        setError(err.message || "Unable to rewrite the research prompt.");
+      }
+    } finally {
+      setClarifying(false);
+    }
+  };
+
+  const approveResearchPrompt = () => {
+    const finalPrompt = reviewPrompt.trim();
+    if (!finalPrompt) {
+      setError("The research prompt cannot be empty.");
+      return;
+    }
+
+    setTopic(finalPrompt);
+    setReviewPrompt(null);
+    runResearch(finalPrompt);
+  };
+
   // =======================================================
   // KEYBOARD HANDLER
   // =======================================================
@@ -394,11 +498,12 @@ function App() {
   const handleKeyDown = (event) => {
     if (
       event.key === "Enter" &&
-      !event.shiftKey
+      !event.shiftKey &&
+      reviewPrompt === null
     ) {
       event.preventDefault();
 
-      runResearch();
+      beginResearch();
     }
   };
 
@@ -408,8 +513,9 @@ function App() {
 
   const resetResearch = () => {
     setTopic("");
-
+    setReviewPrompt(null);
     setReport("");
+    setReportTitle("");
     setConversationId(null);
     setOpenedConversation(null);
 
@@ -613,11 +719,13 @@ function App() {
   const startNewChat = () => {
     setOpenedConversation(null);
     setConversationId(null);
-    setTopic(""); setReport(""); setError(""); setLoading(false);
+    setReviewPrompt(null);
+    setTopic(""); setReport(""); setReportTitle(""); setError(""); setLoading(false);
     setActiveTab("nexus"); setActivePage("workspace");
   };
 
   const openSavedChat = async (chat) => {
+    setReviewPrompt(null);
     const response = await fetch(`${API_URL}/api/conversations/${chat.id}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) return;
     const data = await response.json();
@@ -627,7 +735,12 @@ function App() {
     } else {
       const firstQuestion = data.messages.find((message) => message.role === "user");
       const lastAnswer = [...data.messages].reverse().find((message) => message.role === "assistant");
-      setTopic(firstQuestion?.content || data.title); setReport(lastAnswer?.content || ""); setActiveTab("nexus");
+      const savedTopic = firstQuestion?.content || data.title;
+      const savedReport = readSavedReport(lastAnswer?.content || "");
+      setTopic(savedTopic);
+      setReport(savedReport.report);
+      setReportTitle(savedReport.title || createFallbackReportTitle(savedTopic));
+      setActiveTab("nexus");
     }
   };
 
@@ -755,7 +868,7 @@ function App() {
                 RESEARCH INPUT
             ================================================= */}
 
-            {!loading && (
+            {!loading && reviewPrompt === null && (
               <>
                 <div className="research-box">
 
@@ -769,18 +882,33 @@ function App() {
                     onKeyDown={handleKeyDown}
                     placeholder="What do you want to investigate?"
                     rows="2"
+                    disabled={clarifying}
                   />
 
                   <button
                     type="button"
-                    onClick={runResearch}
-                    disabled={!topic.trim()}
+                    onClick={beginResearch}
+                    disabled={!topic.trim() || clarifying}
                   >
-                    EXPLORE
+                    {clarifying
+                      ? "REFINING..."
+                      : technicalMode
+                      ? "REVIEW PROMPT"
+                      : "EXPLORE"}
 
                     <span>↗</span>
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  className={`technical-mode-toggle ${technicalMode ? "active" : ""}`}
+                  aria-pressed={technicalMode}
+                  onClick={() => setTechnicalMode((enabled) => !enabled)}
+                  disabled={clarifying}
+                >
+                  TECHNICAL MODE {technicalMode ? "ON" : "OFF"}
+                </button>
 
                 <div className="topic-suggestions" aria-label="Example topics">
                   {SUGGESTED_TOPICS.map((suggestion) => (
@@ -794,6 +922,43 @@ function App() {
                   <span>↵</span> ENTER TO RUN <span>·</span> <span>⇧ ↵</span> NEW LINE
                 </div>
               </>
+            )}
+
+            {!loading && reviewPrompt !== null && (
+              <section className="technical-review">
+                <p>
+                  Review and edit the interpreted research prompt before it is sent
+                  to research. Your original prompt has not been added to history.
+                </p>
+                <p className="technical-original-prompt">
+                  Original prompt: {topic}
+                </p>
+                <textarea
+                  value={reviewPrompt}
+                  onChange={(event) => setReviewPrompt(event.target.value)}
+                  aria-label="Review the interpreted research prompt"
+                  rows="7"
+                />
+                <div className="technical-review-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewPrompt(null);
+                      setError("");
+                    }}
+                  >
+                    BACK TO ORIGINAL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={approveResearchPrompt}
+                    disabled={!reviewPrompt.trim()}
+                  >
+                    APPROVE &amp; RESEARCH
+                    <span>↗</span>
+                  </button>
+                </div>
+              </section>
             )}
 
             {/* =================================================
@@ -823,9 +988,15 @@ function App() {
 
                   </div>
 
-                  <div className="progress-topic">
-                    "{topic}"
-                  </div>
+                  <details className="prompt-disclosure progress-topic">
+                    <summary>
+                      <span className="prompt-disclosure-label">Research prompt</span>
+                      <span className="prompt-disclosure-preview">
+                        {promptPreview(topic)}
+                      </span>
+                    </summary>
+                    <p>{topic}</p>
+                  </details>
 
                 </div>
 
@@ -957,10 +1128,20 @@ function App() {
               </div>
 
               <h1>
-                {topic}
+                {reportTitle || createFallbackReportTitle(topic)}
               </h1>
 
-              <p>
+              <details className="prompt-disclosure report-prompt">
+                <summary>
+                  <span className="prompt-disclosure-label">Research prompt</span>
+                  <span className="prompt-disclosure-preview">
+                    {promptPreview(topic)}
+                  </span>
+                </summary>
+                <p>{topic}</p>
+              </details>
+
+              <p className="report-attribution">
                 Synthesized by the CODEX
                 multi-agent research pipeline.
               </p>
@@ -1050,8 +1231,10 @@ function App() {
 
               <ReactMarkdown
                 remarkPlugins={[
-                  remarkGfm
+                  remarkGfm,
+                  remarkMath,
                 ]}
+                rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
                 components={{
 
                   h1: ({ children }) => (
@@ -1166,7 +1349,7 @@ function App() {
                   ),
                 }}
               >
-                {report}
+                {normalizeMathMarkdown(report)}
               </ReactMarkdown>
 
             </div>
