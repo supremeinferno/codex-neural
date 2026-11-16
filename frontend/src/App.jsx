@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { normalizeMathMarkdown } from "./mathMarkdown";
 
 import "./index.css";
 
@@ -23,6 +27,35 @@ const SUGGESTED_TOPICS = [
 ];
 
 const TICKER_ITEMS = ["Search", "Read", "Synthesize", "Cited sources", "PDF Q&A", "Saved chats", "Multi-agent pipeline"];
+
+const promptPreview = (prompt, maxLength = 120) => {
+  const text = prompt.replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+};
+
+const createFallbackReportTitle = (prompt) => {
+  const firstLine = prompt
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  const title = (firstLine || "Research report")
+    .replace(/^#+\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (title.length <= 80) return title;
+  const shortened = title.slice(0, 79).replace(/\s+\S*$/, "").trim();
+  return `${shortened || title.slice(0, 79)}…`;
+};
+
+const readSavedReport = (content) => {
+  const match = content.match(/^# (?!\d+\.)[^\r\n]+\r?\n\r?\n([\s\S]*)$/);
+  if (!match) return { title: "", report: content };
+
+  const title = content.split(/\r?\n/, 1)[0].replace(/^#\s*/, "").trim();
+  return { title, report: match[1] };
+};
 
 function App() {
 
@@ -111,6 +144,7 @@ function App() {
     setTopic("");
 
     setReport("");
+    setReportTitle("");
     setConversationId(null);
     setOpenedConversation(null);
 
@@ -195,6 +229,8 @@ function App() {
   const [reviewPrompt, setReviewPrompt] = useState(null);
 
   const [report, setReport] = useState("");
+
+  const [reportTitle, setReportTitle] = useState("");
 
   const [loading, setLoading] = useState(false);
 
@@ -334,9 +370,16 @@ function App() {
       }
 
       setReport(data.report);
+      const title = typeof data.title === "string" && data.title.trim()
+        ? data.title.trim()
+        : createFallbackReportTitle(researchTopic);
+      setReportTitle(title);
       await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role: "assistant", content: data.report }),
+        body: JSON.stringify({
+          role: "assistant",
+          content: `# ${title}\n\n${data.report}`,
+        }),
       });
       setHistoryVersion((value) => value + 1);
 
@@ -472,6 +515,7 @@ function App() {
     setTopic("");
     setReviewPrompt(null);
     setReport("");
+    setReportTitle("");
     setConversationId(null);
     setOpenedConversation(null);
 
@@ -676,7 +720,7 @@ function App() {
     setOpenedConversation(null);
     setConversationId(null);
     setReviewPrompt(null);
-    setTopic(""); setReport(""); setError(""); setLoading(false);
+    setTopic(""); setReport(""); setReportTitle(""); setError(""); setLoading(false);
     setActiveTab("nexus"); setActivePage("workspace");
   };
 
@@ -691,7 +735,12 @@ function App() {
     } else {
       const firstQuestion = data.messages.find((message) => message.role === "user");
       const lastAnswer = [...data.messages].reverse().find((message) => message.role === "assistant");
-      setTopic(firstQuestion?.content || data.title); setReport(lastAnswer?.content || ""); setActiveTab("nexus");
+      const savedTopic = firstQuestion?.content || data.title;
+      const savedReport = readSavedReport(lastAnswer?.content || "");
+      setTopic(savedTopic);
+      setReport(savedReport.report);
+      setReportTitle(savedReport.title || createFallbackReportTitle(savedTopic));
+      setActiveTab("nexus");
     }
   };
 
@@ -939,9 +988,15 @@ function App() {
 
                   </div>
 
-                  <div className="progress-topic">
-                    "{topic}"
-                  </div>
+                  <details className="prompt-disclosure progress-topic">
+                    <summary>
+                      <span className="prompt-disclosure-label">Research prompt</span>
+                      <span className="prompt-disclosure-preview">
+                        {promptPreview(topic)}
+                      </span>
+                    </summary>
+                    <p>{topic}</p>
+                  </details>
 
                 </div>
 
@@ -1073,10 +1128,20 @@ function App() {
               </div>
 
               <h1>
-                {topic}
+                {reportTitle || createFallbackReportTitle(topic)}
               </h1>
 
-              <p>
+              <details className="prompt-disclosure report-prompt">
+                <summary>
+                  <span className="prompt-disclosure-label">Research prompt</span>
+                  <span className="prompt-disclosure-preview">
+                    {promptPreview(topic)}
+                  </span>
+                </summary>
+                <p>{topic}</p>
+              </details>
+
+              <p className="report-attribution">
                 Synthesized by the CODEX
                 multi-agent research pipeline.
               </p>
@@ -1166,8 +1231,10 @@ function App() {
 
               <ReactMarkdown
                 remarkPlugins={[
-                  remarkGfm
+                  remarkGfm,
+                  remarkMath,
                 ]}
+                rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
                 components={{
 
                   h1: ({ children }) => (
@@ -1282,7 +1349,7 @@ function App() {
                   ),
                 }}
               >
-                {report}
+                {normalizeMathMarkdown(report)}
               </ReactMarkdown>
 
             </div>

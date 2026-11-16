@@ -86,7 +86,10 @@ Failures: "No OTP request found.", "OTP has expired.", "Invalid OTP."
 
 Returns an editable research-prompt draft. This endpoint does not start research
 or write to conversation history; the frontend sends the user's approved prompt
-to `/api/research`.
+to `/api/research`. The original topic is sent as `topic`; the response's
+`topic` value is the generated draft. The draft is not final until the user
+approves or edits it. If rewrite fails or the user cancels, research history
+has not yet been created.
 
 ### `POST /api/research` — protected
 ```json
@@ -97,11 +100,23 @@ to `/api/research`.
 {
   "search_results": "- Title ... URL ... facts ...",
   "scraped_content": "Plain text of the first source ...",
+  "title": "Microplastics and Human Health",
   "report": "# 1. Introduction\n...\n# Sources\n- [Title](https://...)",
   "feedback": "Critic temporarily skipped because Mistral rate limit was reached."
 }
 ```
-The frontend shows `report`. This call can take a minute or more.
+The frontend displays `title` as the report heading and shows the submitted
+research prompt below it. The report body remains in `report`. This call can
+take a minute or more.
+
+The writer is prompted to return `TITLE:` and `REPORT:` sections. The backend
+parses a non-empty title and report, normalizes the title to at most 80
+characters, and returns them as separate response fields. If the expected
+format is missing or incomplete, it derives a short title from the submitted
+topic and leaves the writer's output intact as `report`. Conversation history
+stores the submitted topic as the user message and the report as the assistant
+message, with the title prepended as a Markdown heading; no schema change or
+separate title message is used.
 
 ---
 

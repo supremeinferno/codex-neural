@@ -79,7 +79,12 @@ Loads `SMTP_EMAIL` and `SMTP_APP_PASSWORD` from the root `.env`, then runs `init
 
 ## `pipeline.py` — the research pipeline
 
-One public function: `run_research_pipeline(topic) -> dict`.
+One public function: `run_research_pipeline(topic) -> dict`. It returns a
+concise `title` parsed from the writer's `TITLE:`/`REPORT:` output and the
+Markdown body in `report`. Titles are normalized and capped at 80 characters.
+If the writer does not return both a non-empty title and report in the expected
+format, the pipeline derives a title from the first non-empty line of the
+submitted topic and preserves the writer's complete output as the report.
 
 | Step | Code | Output stored in `state` |
 | --- | --- | --- |
@@ -97,7 +102,9 @@ Run it alone with `python -m backend.pipeline`.
 `rewrite_research_prompt(topic)` uses the shared Groq LLM to return one
 technically clearer research prompt. The authenticated `/api/research/clarify`
 route exposes this as a separate pre-research step; the user reviews and edits
-the draft before the existing research endpoint is called.
+the draft before the existing research endpoint is called. It does not create
+or write to a conversation. History is still owned by the normal research
+request and stores the final submitted topic and report only.
 
 ## `agents.py` — LLM, agents and prompts
 

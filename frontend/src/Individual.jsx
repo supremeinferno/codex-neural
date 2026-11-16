@@ -1,6 +1,9 @@
 import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import { normalizeMathMarkdown } from "./mathMarkdown";
 import { API_URL } from "./config";
 import { useEffect } from "react";
 
@@ -496,9 +499,10 @@ function Individual({ token, openedConversation, currentConversationId, onConver
 
                                         {message.role === "assistant" ? (
                                             <ReactMarkdown
-                                                remarkPlugins={[remarkGfm]}
+                                                remarkPlugins={[remarkGfm, remarkMath]}
+                                                rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
                                             >
-                                                {message.content}
+                                                {normalizeMathMarkdown(message.content)}
                                             </ReactMarkdown>
                                         ) : (
                                             message.content

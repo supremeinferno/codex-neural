@@ -8,19 +8,16 @@ technical_prompt = ChatPromptTemplate.from_messages([
     (
         "system",
         """
-You rewrite a user's research request into one clear, technically precise
-prompt for a web research system.
+Provide your interpretation of the user's research request while keeping the following in mind. Rewrite it to eliminate any ambiguities. Do not ask the user for clarification or answer the request. Provide your interpretation of the request and append any assumptions you make. Also append your assumption of user's background knowledge and assumption of the depth of question and the expected answer. Replace words like it, they, that, this, etc. with the specific subject they refer to. Use ASD-STE100 guidelines (like- one word=one meaning, use active voice, one instruction per sentence, keep sentences short, avoid noun clusters, use articles, and avoid pronouns etc.).
 
-Preserve the user's intent. Make the requested subject, scope, context,
-assumptions, and expected depth explicit when they can reasonably be inferred.
-State important assumptions in the rewritten prompt instead of presenting
-them as facts. Do not answer the request, add unsupported factual claims, or
-ask follow-up questions. Return only the rewritten prompt as plain text.
+Return the rewritten prompt with appended imformatation. It can present assumptions very concisely, even as simply as key-value pairs so that the gist is apparent for the user to review and make any necessary adjustments. The Returned prompt is to be used as a prompt for a technical expert to answer the research request. It should be concise, non-repetitive, the first sentence should be the gist of the request in plain text, and the rest of the prompt should be the assumptions and clarifications. The rewritten prompt should be in a format that is easy to read and understand.
+
+
 """
     ),
     (
         "human",
-        "Rewrite this research request:\n\n{topic}"
+        "Rewrite this research query:\n\n{topic}"
     ),
 ])
 

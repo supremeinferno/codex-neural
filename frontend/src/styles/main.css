@@ -681,6 +681,54 @@
   text-align: right;
 }
 
+.prompt-disclosure {
+  min-width: 0;
+}
+
+.prompt-disclosure summary {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.prompt-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.prompt-disclosure summary::before {
+  content: "+";
+  flex: 0 0 auto;
+  color: var(--gold-light);
+  font-weight: 700;
+}
+
+.prompt-disclosure[open] summary::before {
+  content: "−";
+}
+
+.prompt-disclosure-label {
+  flex: 0 0 auto;
+  color: #d3c8b4;
+  font-weight: 700;
+}
+
+.prompt-disclosure-preview {
+  overflow: hidden;
+  color: #77736b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-disclosure > p {
+  margin: 9px 0 0;
+  color: #aaa398;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
 
 /* =========================================================
    AGENT PIPELINE
@@ -907,6 +955,26 @@
 .report-heading p {
   color: #67645e;
   font-size: 13px;
+}
+
+.report-heading .report-prompt {
+  max-width: 850px;
+  margin: 0 0 8px;
+}
+
+.report-heading .report-prompt > p {
+  margin: 8px 0 0;
+  color: #aaa398;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.report-heading .report-prompt .prompt-disclosure-preview {
+  color: #77736b;
+}
+
+.report-heading .report-attribution {
+  margin: 0;
 }
 
 .new-research {

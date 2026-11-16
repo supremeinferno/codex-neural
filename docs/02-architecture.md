@@ -62,8 +62,15 @@ User enters a topic and presses Run
         │
         ▼
 App.jsx
+  ├─ Technical mode OFF ───────────────────────────────────────────────┐
+  │                                                                    │
+  └─ Technical mode ON                                                 │
+       ├─ POST /api/research/clarify { topic }                         │
+       ├─ show editable rewrite; wait for user approval                │
+       └─ use the approved text as the research topic ─────────────────┤
+                                                                      ▼
   ├─ POST /api/conversations            (create a chat, kind = "research")
-  ├─ POST /api/conversations/{id}/messages   (save the user's topic)
+  ├─ POST /api/conversations/{id}/messages   (save the final research topic)
   ├─ POST /api/research  { topic }      ──────────────┐
   │     (3-minute timeout via AbortController)        │
   │                                                   ▼
@@ -74,13 +81,19 @@ App.jsx
   │                                 STEP 2  Take the first URL from step 1
   │                                         scrape_webpage → clean text (≤ 6000 chars)
   │                                 STEP 3  writer_chain (prompt → Groq → text)
-  │                                         builds the Markdown report
+  │                                         returns TITLE: and REPORT: sections
   │                                 STEP 4  Critic — currently skipped
   │                                         returns { search_results, scraped_content,
-  │                                                   report, feedback }
-  ├─ show state.report with react-markdown
+  │                                                   title, report, feedback }
+  ├─ show title and submitted topic; render report Markdown
   └─ POST /api/conversations/{id}/messages   (save the report as the assistant reply)
 ```
+
+The optional rewrite is a separate authenticated request and does not create a
+conversation or history entry. Only after approval does the frontend create the
+research chat and save the final topic. The report title is included as a
+Markdown heading in the existing assistant message, so saved history retains it
+without a separate title field.
 
 While waiting, the UI animates four stages (Research → Read → Write → Critique) on a timer. The animation is cosmetic; the backend does not stream progress.
 

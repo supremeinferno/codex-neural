@@ -33,6 +33,13 @@
   box-sizing: border-box;
 }
 
+.katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25em 0;
+}
+
 html {
   scroll-behavior: smooth;
 }
