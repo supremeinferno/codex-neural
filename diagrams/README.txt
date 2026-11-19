@@ -14,3 +14,4 @@ responsibilities rather than a claim that every box is a literal Python class.
 
 Exact Overleaf typography/layout can be matched once the GR's actual .tex
 template is supplied.
+05_state_diagram.png / .svg

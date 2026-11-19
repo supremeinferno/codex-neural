@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1900" height="1320" viewBox="0 0 1900 1320" role="img" aria-labelledby="title desc">
+<title id="title">CODEX Neural application state diagram</title>
+<desc id="desc">State diagram for authentication, the authenticated workspace, research, PDF conversations, saved chat history, and admin access, based on the committed npeep implementation.</desc>
+<defs>
+  <marker id="arrow" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#c4a15b"/></marker>
+  <marker id="arrowMuted" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#8d969f"/></marker>
+  <style>
+    text{font-family:Inter,Segoe UI,Arial,sans-serif;fill:#eeeae2}.title{font-size:34px;font-weight:750;letter-spacing:.3px}.subtitle{font-size:16px;fill:#a9a69f}.section{font-size:17px;font-weight:750;letter-spacing:1.8px;fill:#d8b76e}.state{fill:#171a1d;stroke:#c4a15b;stroke-width:2}.stateBlue{fill:#171a1d;stroke:#7ea6bb;stroke-width:2}.stateGreen{fill:#171a1d;stroke:#86ad83;stroke-width:2}.stateRed{fill:#211a19;stroke:#cf8f7e;stroke-width:2}.label{font-size:17px;font-weight:650}.small{font-size:14px;fill:#c1bdb4}.tiny{font-size:12px;fill:#aaa69d}.arrow{fill:none;stroke:#c4a15b;stroke-width:2.4;marker-end:url(#arrow)}.arrowMuted{fill:none;stroke:#8d969f;stroke-width:2;marker-end:url(#arrowMuted)}.frame{fill:#101214;stroke:#373b3f;stroke-width:1.5;rx:20}.dash{stroke-dasharray:8 7}.pill{fill:#25231e;stroke:#705d36;stroke-width:1.2;rx:15}.note{font-size:13px;fill:#b4ad9e}
+  </style>
+</defs>
+<rect width="1900" height="1320" fill="#0b0c0d"/>
+<text x="55" y="60" class="title">CODEX Neural — Application State Diagram</text>
+<text x="55" y="91" class="subtitle">Authentication, workspace navigation, research, PDF chats, and saved history • based on committed npeep implementation</text>
+
+<!-- Authentication region -->
+<rect x="45" y="125" width="470" height="1080" class="frame"/>
+<text x="75" y="163" class="section">1 · AUTHENTICATION</text>
+<circle cx="91" cy="218" r="11" fill="#d8b76e"/>
+<path d="M102 218 H132" class="arrow"/>
+<rect x="140" y="187" width="300" height="64" rx="14" class="state"/>
+<text x="290" y="215" text-anchor="middle" class="label">Signed out · Login screen</text>
+<text x="290" y="237" text-anchor="middle" class="small">No active authenticated session</text>
+<rect x="140" y="285" width="300" height="70" rx="14" class="stateBlue"/>
+<text x="290" y="315" text-anchor="middle" class="label">Register</text><text x="290" y="338" text-anchor="middle" class="small">Success returns to login</text>
+<rect x="140" y="390" width="300" height="70" rx="14" class="stateBlue"/>
+<text x="290" y="420" text-anchor="middle" class="label">Request password reset</text><text x="290" y="443" text-anchor="middle" class="small">Forgot password</text>
+<rect x="140" y="495" width="300" height="70" rx="14" class="stateBlue"/>
+<text x="290" y="525" text-anchor="middle" class="label">Verify email OTP</text><text x="290" y="548" text-anchor="middle" class="small">Invalid code → try verification again</text>
+<rect x="140" y="600" width="300" height="70" rx="14" class="stateBlue"/>
+<text x="290" y="630" text-anchor="middle" class="label">Reset password</text><text x="290" y="653" text-anchor="middle" class="small">Then return to login</text>
+<path d="M290 251 V280" class="arrowMuted"/><text x="302" y="274" class="tiny">create account</text>
+<path d="M140 320 H95 V218 H134" class="arrowMuted"/><text x="59" y="300" class="tiny">register succeeds</text>
+<path d="M140 232 H115 V425 H134" class="arrowMuted"/><text x="63" y="384" class="tiny">forgot password</text>
+<path d="M290 460 V490" class="arrowMuted"/><text x="302" y="484" class="tiny">OTP sent</text>
+<path d="M290 565 V595" class="arrowMuted"/><text x="302" y="589" class="tiny">code valid</text>
+<path d="M140 635 H105 V218 H134" class="arrowMuted"/><text x="66" y="470" class="tiny" transform="rotate(-90 66 470)">password updated / return to login</text>
+<path d="M440 540 H480 V585 H430 V540 H440" class="arrowMuted dash"/><text x="445" y="578" class="tiny">invalid OTP</text>
+<text x="450" y="190" class="tiny">valid login · session token issued</text>
+<path d="M440 220 H520 V254 H579" class="arrow"/>
+<rect x="140" y="785" width="300" height="78" rx="14" class="stateGreen"/>
+<text x="290" y="817" text-anchor="middle" class="label">Session check</text><text x="290" y="841" text-anchor="middle" class="small">GET /api/session on app load</text>
+<path d="M290 980 V870" class="arrowMuted"/><text x="302" y="893" class="tiny">stored tab session</text>
+<path d="M440 825 H525 V254 H579" class="arrow"/><text x="480" y="801" class="tiny">valid</text>
+<path d="M140 825 H110 V218 H134" class="arrowMuted"/><text x="102" y="875" class="tiny">invalid / expired</text>
+<text x="83" y="905" class="small">If token is missing, invalid, or expired:</text>
+<text x="83" y="930" class="small">clear local user/session and return to login.</text>
+<rect x="75" y="980" width="405" height="145" class="pill"/>
+<text x="98" y="1014" class="label">Session storage</text>
+<text x="98" y="1044" class="small">User and bearer token are held in the browser tab.</text>
+<text x="98" y="1071" class="small">Sign out calls /api/logout, clears local state,</text>
+<text x="98" y="1098" class="small">and returns to the signed-out login screen.</text>
+
+<!-- Main authenticated workspace -->
+<rect x="545" y="125" width="1310" height="255" class="frame"/>
+<text x="580" y="163" class="section">2 · AUTHENTICATED APPLICATION</text>
+<rect x="585" y="202" width="300" height="104" rx="16" class="stateGreen"/>
+<text x="735" y="238" text-anchor="middle" class="label">Workspace</text>
+<text x="735" y="265" text-anchor="middle" class="small">Nexus research · PDF analyzer</text>
+<text x="735" y="287" text-anchor="middle" class="small">Admin dashboard · admin account only</text>
+<rect x="1005" y="202" width="280" height="104" rx="16" class="state"/>
+<text x="1145" y="238" text-anchor="middle" class="label">Menu closed</text>
+<text x="1145" y="267" text-anchor="middle" class="small">Tap ☰ to open drawer</text>
+<rect x="1410" y="202" width="400" height="104" rx="16" class="state"/>
+<text x="1610" y="235" text-anchor="middle" class="label">Navigation drawer open</text>
+<text x="1610" y="263" text-anchor="middle" class="small">History · Starred chats (disabled) · Settings (disabled)</text>
+<text x="1610" y="286" text-anchor="middle" class="small">Sign out → revoke session and return to login</text>
+<path d="M885 254 H999" class="arrow"/><text x="915" y="239" class="tiny">menu</text>
+<path d="M1285 254 H1404" class="arrow"/><text x="1314" y="239" class="tiny">open</text>
+<path d="M1409 291 H1286" class="arrowMuted"/><text x="1324" y="328" class="tiny">close / Escape / scrim</text>
+
+<!-- Research lane -->
+<rect x="545" y="415" width="620" height="465" class="frame"/>
+<text x="575" y="453" class="section">3 · NEXUS RESEARCH</text>
+<rect x="585" y="495" width="240" height="75" rx="14" class="state"/>
+<text x="705" y="525" text-anchor="middle" class="label">Enter topic</text><text x="705" y="549" text-anchor="middle" class="small">New research chat</text>
+<rect x="880" y="495" width="240" height="75" rx="14" class="stateBlue"/>
+<text x="1000" y="525" text-anchor="middle" class="label">Save question</text><text x="1000" y="549" text-anchor="middle" class="small">Create/reuse conversation</text>
+<rect x="880" y="630" width="240" height="75" rx="14" class="stateBlue"/>
+<text x="1000" y="660" text-anchor="middle" class="label">Research running</text><text x="1000" y="684" text-anchor="middle" class="small">Authenticated pipeline request</text>
+<rect x="585" y="755" width="240" height="75" rx="14" class="stateGreen"/>
+<text x="705" y="785" text-anchor="middle" class="label">Show report</text><text x="705" y="809" text-anchor="middle" class="small">Save assistant response</text>
+<path d="M825 532 H874" class="arrow"/><path d="M1000 570 V624" class="arrow"/><path d="M1000 705 V730 H705 V749" class="arrow"/><path d="M880 668 H850 V800 H862" class="arrowMuted"/>
+<rect x="856" y="760" width="265" height="79" rx="14" class="stateRed"/>
+<text x="988" y="791" text-anchor="middle" class="label">Error / retry</text><text x="988" y="815" text-anchor="middle" class="small">Keep topic; show error</text>
+<path d="M880 666 H850 V799 H862" class="arrowMuted"/>
+<path d="M856 800 H565 V532 H579" class="arrowMuted"/><text x="580" y="870" class="tiny">successful result</text><text x="866" y="852" class="tiny">failure</text>
+<text x="595" y="858" class="tiny">Saved chat can be reopened with its topic and last report.</text>
+
+<!-- PDF lane -->
+<rect x="1190" y="415" width="665" height="465" class="frame"/>
+<text x="1220" y="453" class="section">4 · PDF ANALYSIS &amp; CHAT</text>
+<rect x="1230" y="495" width="245" height="75" rx="14" class="state"/>
+<text x="1352" y="525" text-anchor="middle" class="label">Choose PDF</text><text x="1352" y="549" text-anchor="middle" class="small">No document selected</text>
+<rect x="1535" y="495" width="265" height="75" rx="14" class="stateBlue"/>
+<text x="1667" y="525" text-anchor="middle" class="label">Upload &amp; index</text><text x="1667" y="549" text-anchor="middle" class="small">Authenticated document processing</text>
+<rect x="1535" y="630" width="265" height="75" rx="14" class="stateGreen"/>
+<text x="1667" y="660" text-anchor="middle" class="label">PDF ready</text><text x="1667" y="684" text-anchor="middle" class="small">Create saved PDF conversation</text>
+<rect x="1230" y="755" width="245" height="75" rx="14" class="stateBlue"/>
+<text x="1352" y="785" text-anchor="middle" class="label">Ask question</text><text x="1352" y="809" text-anchor="middle" class="small">Save user message</text>
+<path d="M1475 532 H1529" class="arrow"/><path d="M1667 570 V624" class="arrow"/><path d="M1535 668 H1505 V792 H1481" class="arrow"/>
+<path d="M1230 792 H1210 V668 H1224" class="arrowMuted"/><text x="1198" y="730" class="tiny" transform="rotate(-90 1198 730)">repeat question</text>
+<rect x="1510" y="755" width="300" height="75" rx="14" class="stateGreen"/>
+<text x="1660" y="785" text-anchor="middle" class="label">Answer + sources</text>
+<text x="1660" y="809" text-anchor="middle" class="small">Display and save assistant message</text>
+<path d="M1475 792 H1504" class="arrow"/>
+<path d="M1660 830 V845 H1352 V836" class="arrowMuted"/>
+<text x="1225" y="861" class="tiny">Upload, answer, or save error → show error and retry</text>
+
+<!-- History lane -->
+<rect x="545" y="915" width="1310" height="290" class="frame"/>
+<text x="575" y="953" class="section">5 · SAVED CHAT HISTORY</text>
+<rect x="585" y="990" width="260" height="80" rx="14" class="state"/>
+<text x="715" y="1022" text-anchor="middle" class="label">History page</text><text x="715" y="1047" text-anchor="middle" class="small">Load this user’s conversations</text>
+<rect x="940" y="990" width="260" height="80" rx="14" class="stateBlue"/>
+<text x="1070" y="1022" text-anchor="middle" class="label">Select saved chat</text><text x="1070" y="1047" text-anchor="middle" class="small">Open only if owned by user</text>
+<rect x="1300" y="977" width="235" height="105" rx="14" class="stateGreen"/>
+<text x="1417" y="1010" text-anchor="middle" class="label">Research chat</text><text x="1417" y="1035" text-anchor="middle" class="small">Restore topic + last report</text><text x="1417" y="1058" text-anchor="middle" class="small">Continue research</text>
+<rect x="1580" y="977" width="235" height="105" rx="14" class="stateGreen"/>
+<text x="1697" y="1010" text-anchor="middle" class="label">PDF chat</text><text x="1697" y="1035" text-anchor="middle" class="small">Restore PDF + messages</text><text x="1697" y="1058" text-anchor="middle" class="small">Continue asking</text>
+<path d="M845 1030 H934" class="arrow"/><path d="M1200 1025 H1260 V1030 H1294" class="arrow"/><path d="M1200 1040 H1240 V1090 H1697 V1088" class="arrow"/>
+<text x="1218" y="1016" class="tiny">kind = research</text><text x="1450" y="1085" class="tiny">kind = PDF</text>
+<rect x="710" y="1100" width="470" height="70" rx="14" class="pill"/>
+<text x="945" y="1129" text-anchor="middle" class="label">Rename / delete</text><text x="945" y="1153" text-anchor="middle" class="small">Save title change or remove conversation</text>
+<path d="M715 1070 V1094" class="arrowMuted"/><path d="M710 1135 H650 V1030 H579" class="arrowMuted"/>
+<text x="1218" y="1140" class="note">New chat returns to Nexus topic entry. Conversation and messages persist in SQLite.</text>
+<path d="M1610 306 H1870 V900 H535 V965 H715 V984" class="arrow dash"/><text x="1630" y="395" class="tiny">drawer → History</text>
+<path d="M735 306 V395 H705 V488" class="arrow dash"/><text x="745" y="393" class="tiny">select Nexus</text>
+<path d="M800 306 V390 H1350 V488" class="arrow dash"/><text x="1008" y="385" class="tiny">select PDF analyzer</text>
+
+
+<text x="55" y="1270" class="note">Diagram basis: committed npeep code at HEAD 2c3850e.</text>
+<text x="55" y="1295" class="tiny">Starred chats and Settings are shown as disabled placeholders in the current interface; no behavior is modeled for them.</text>
+</svg>

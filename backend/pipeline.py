@@ -10,7 +10,7 @@ from backend.agents import (
 from backend.tools import scrape_webpage
 
 
-def run_research_pipeline(topic: str) -> dict:
+def run_research_pipeline(topic: str, conversation_context: str = "") -> dict:
 
     state = {}
 
@@ -27,11 +27,20 @@ def run_research_pipeline(topic: str) -> dict:
     # Small delay before the Mistral request
     time.sleep(20)
 
+    search_instruction = f"Find recent, reliable and detailed information about: {topic}"
+    if conversation_context:
+        search_instruction = (
+            "Use the conversation context only to resolve references in the current request; "
+            "do not treat earlier turns as separate research requests.\n\n"
+            f"CONVERSATION CONTEXT:\n{conversation_context}\n\n"
+            f"CURRENT RESEARCH REQUEST:\n{topic}"
+        )
+
     search_result = search_agent.invoke({
         "messages": [
             (
                 "user",
-                f"Find recent, reliable and detailed information about: {topic}"
+                search_instruction
             )
         ]
     })
@@ -87,7 +96,9 @@ def run_research_pipeline(topic: str) -> dict:
     print("=" * 50)
 
     research_combined = (
-        f"SEARCH RESULTS:\n"
+        (f"CONVERSATION CONTEXT (use only to understand the current request):\n{conversation_context[:5000]}\n\n" if conversation_context else "")
+        + f"CURRENT RESEARCH REQUEST: {topic}\n\n"
+        + f"SEARCH RESULTS:\n"
         f"{state['search_results'][:6000]}\n\n"
         f"DETAILED SCRAPED CONTENT:\n"
         f"{state['scraped_content'][:6000]}"

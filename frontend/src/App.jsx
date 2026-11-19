@@ -11,6 +11,7 @@ import Register from "./register.jsx";
 import Individual from "./Individual.jsx";
 import ChatHistory from "./ChatHistory.jsx";
 import NavigationDrawer from "./NavigationDrawer.jsx";
+import ChatStarButton from "./ChatStarButton.jsx";
 import "./styles/navigation.css";
 
 import { API_URL } from "./config";
@@ -41,6 +42,9 @@ function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activePage, setActivePage] = useState("workspace");
   const [conversationId, setConversationId] = useState(null);
+  const [conversationStarred, setConversationStarred] = useState(false);
+  const [starUpdating, setStarUpdating] = useState(false);
+  const [starError, setStarError] = useState("");
 
   const [user, setUser] = useState(() => {
     try {
@@ -101,6 +105,10 @@ function App() {
     setToken("");
     setConversationId(null);
     setOpenedConversation(null);
+    setConversationStarred(false);
+    setStarError("");
+    setPromptCorrection("");
+    setFollowUpQuestion("");
     setTopic("");
 
     setReport("");
@@ -135,6 +143,39 @@ function App() {
   const isAdmin =
     user?.email?.trim().toLowerCase() ===
     ADMIN_EMAIL.trim().toLowerCase();
+
+  const handleToggleConversationStar = async () => {
+    if (!conversationId || starUpdating) return;
+    const nextStarred = !conversationStarred;
+    setStarUpdating(true);
+    setStarError("");
+    try {
+      const response = await fetch(
+        `${API_URL}/api/conversations/${conversationId}/star`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ is_starred: nextStarred }),
+        }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Unable to update starred chats.");
+      setConversationStarred(Boolean(data.is_starred));
+      setOpenedConversation((current) =>
+        current?.id === conversationId
+          ? { ...current, is_starred: Boolean(data.is_starred) }
+          : current
+      );
+      setHistoryVersion((value) => value + 1);
+    } catch (error) {
+      setStarError(error.message || "Unable to update starred chats.");
+    } finally {
+      setStarUpdating(false);
+    }
+  };
 
   // =======================================================
   // MAIN TABS
@@ -180,8 +221,44 @@ function App() {
   // =======================================================
 
   const [topic, setTopic] = useState("");
+  const [followUpQuestion, setFollowUpQuestion] = useState("");
 
   const [report, setReport] = useState("");
+  const [responseMode, setResponseMode] = useState("research");
+  const [promptCorrection, setPromptCorrection] = useState("");
+
+  const [wordExporting, setWordExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+
+  const exportWord = async () => {
+    if (!conversationId || wordExporting) return;
+    setWordExporting(true);
+    setExportError("");
+    try {
+      const response = await fetch(
+        API_URL + "/api/conversations/" + conversationId + "/export/word",
+        { headers: { Authorization: "Bearer " + token } },
+      );
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Unable to export this report.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const safeName = (topic || "Research_Report").replace(/[^a-z0-9._-]+/gi, "_").replace(/^[_\.]+|[_\.]+$/g, "").slice(0, 80) || "Research_Report";
+      link.href = url;
+      link.download = safeName + ".docx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setExportError(error.message || "Unable to export this report.");
+    } finally {
+      setWordExporting(false);
+    }
+  };
 
   const [loading, setLoading] = useState(false);
 
@@ -241,99 +318,116 @@ function App() {
   // RUN RESEARCH
   // =======================================================
 
-  const runResearch = async () => {
-    if (!topic.trim() || loading) return;
-
+  const runResearch = async (promptOverride = null) => {
+    const researchTopic = (promptOverride ?? topic).trim();
+    if (!researchTopic || loading) return;
     setLoading(true);
-
     setError("");
-
+    setStarError("");
     setReport("");
-
+    setResponseMode("research");
+    setPromptCorrection("");
     setActiveStage(0);
+    let timeoutId;
 
     try {
-      const response = await fetch(
-        `${API_URL}/api/research`,
+      let currentConversationId = conversationId;
+      if (!currentConversationId) {
+        const createdResponse = await fetch(`${API_URL}/api/conversations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ kind: "research", title: researchTopic }),
+        });
+        if (!createdResponse.ok) throw new Error("Unable to start a saved research chat.");
+        const created = await createdResponse.json();
+        currentConversationId = created.id;
+        setConversationId(created.id);
+        setOpenedConversation(null);
+        setConversationStarred(false);
+        setHistoryVersion((value) => value + 1);
+      }
+
+      const userMessageResponse = await fetch(
+        `${API_URL}/api/conversations/${currentConversationId}/messages`,
         {
           method: "POST",
-          signal: controller.signal,
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ role: "user", content: researchTopic }),
+        }
+      );
+      if (!userMessageResponse.ok) throw new Error("Your research question could not be saved.");
+      setHistoryVersion((value) => value + 1);
 
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 180000);
+      const response = await fetch(`${API_URL}/api/research`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ topic: researchTopic, conversation_id: currentConversationId }),
+      });
+      if (!response.ok) {
+        let detail = "";
+        try { detail = (await response.json()).detail; } catch { /* non-JSON response */ }
+        throw new Error(detail || `Server returned ${response.status}`);
+      }
+      const data = await response.json();
+      const responseText = data.report || data.answer;
+      if (!responseText) throw new Error("The assistant returned an empty response.");
 
+      const routedMode = data.mode || (data.report ? "research" : "general");
+      const correctedPrompt = typeof data.interpreted_prompt === "string" ? data.interpreted_prompt.trim() : "";
+      const wasCorrected = correctedPrompt && correctedPrompt.toLocaleLowerCase() !== researchTopic.toLocaleLowerCase();
+      setResponseMode(routedMode);
+      setPromptCorrection(wasCorrected ? `I interpreted “${researchTopic}” as “${correctedPrompt}”.` : "");
+      setReport(responseText);
+      const assistantMessageResponse = await fetch(
+        `${API_URL}/api/conversations/${currentConversationId}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({
-            topic: topic.trim(),
+            role: "assistant",
+            content: responseText,
+            sources: routedMode === "research" && !wasCorrected
+              ? []
+              : [{
+                  type: "app_metadata",
+                  response_mode: routedMode,
+                  ...(wasCorrected ? { corrected_prompt: correctedPrompt } : {}),
+                }],
           }),
         }
       );
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        let detail = "";
-
-        try {
-          detail = (await response.json()).detail;
-        } catch {
-          // response had no JSON body
-        }
-
-        throw new Error(
-          detail ||
-            `Server returned ${response.status}`
-        );
+      if (!assistantMessageResponse.ok) {
+        setError("The report is ready, but it could not be saved to chat history.");
       }
-
-      const data = await response.json();
-
-      if (!data.report) {
-        throw new Error(
-          "Backend returned an empty research report."
-        );
-      }
-
-      setReport(data.report);
-      await fetch(`${API_URL}/api/conversations/${currentConversationId}/messages`, {
-        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role: "assistant", content: data.report }),
-      });
       setHistoryVersion((value) => value + 1);
-
-      setActiveStage(
-        stages.length - 1
-      );
+      setActiveStage(stages.length - 1);
     } catch (err) {
-      console.error(
-        "Research error:",
-        err
-      );
-
+      console.error("Research error:", err);
       if (err.name === "AbortError") {
-        setError(
-          "The request timed out. The backend may have stopped or is being rate limited. Please try again."
-        );
-      } else if (
-        err instanceof TypeError &&
-        err.message === "Failed to fetch"
-      ) {
-        setError(
-          "Backend server is not connected. Please start the FastAPI server and try again."
-        );
+        setError("The request timed out. The backend may have stopped or be rate limited. Please try again.");
+      } else if (err instanceof TypeError && err.message === "Failed to fetch") {
+        setError("Backend server is not connected. Please start the FastAPI server and try again.");
       } else {
-        setError(
-          err.message ||
-            "Something went wrong. Please try again."
-        );
+        setError(err.message || "Something went wrong. Please try again.");
       }
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setLoading(false);
     }
   };
 
-  // =======================================================
+  const submitFollowUp = (event) => {
+    event.preventDefault();
+    const message = followUpQuestion.trim();
+    if (!message || loading) return;
+    setFollowUpQuestion("");
+    setTopic(message);
+    runResearch(message);
+  };
+
   // KEYBOARD HANDLER
   // =======================================================
 
@@ -358,6 +452,10 @@ function App() {
     setReport("");
     setConversationId(null);
     setOpenedConversation(null);
+    setConversationStarred(false);
+    setStarError("");
+    setPromptCorrection("");
+    setFollowUpQuestion("");
 
     setError("");
 
@@ -470,6 +568,7 @@ function App() {
           onClick={() => {
             setActivePage("workspace");
             setConversationId(null); setOpenedConversation(null);
+            setConversationStarred(false); setStarError("");
             setActiveTab("nexus");
           }}
         >
@@ -488,6 +587,7 @@ function App() {
           onClick={() => {
             setActivePage("workspace");
             setConversationId(null); setOpenedConversation(null);
+            setConversationStarred(false); setStarError("");
             setActiveTab("individual");
           }}
         >
@@ -540,6 +640,7 @@ function App() {
       open={drawerOpen}
       onClose={() => setDrawerOpen(false)}
       onHistory={() => { setDrawerOpen(false); setActivePage("history"); }}
+      onStarred={() => { setDrawerOpen(false); setActivePage("starred"); }}
       onSignOut={handleLogout}
     />
     </>
@@ -548,7 +649,9 @@ function App() {
   const startNewChat = () => {
     setOpenedConversation(null);
     setConversationId(null);
-    setTopic(""); setReport(""); setError(""); setLoading(false);
+    setConversationStarred(false);
+    setStarError("");
+    setTopic(""); setReport(""); setResponseMode("research"); setPromptCorrection(""); setFollowUpQuestion(""); setError(""); setLoading(false);
     setActiveTab("nexus"); setActivePage("workspace");
   };
 
@@ -556,18 +659,29 @@ function App() {
     const response = await fetch(`${API_URL}/api/conversations/${chat.id}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) return;
     const data = await response.json();
-    setOpenedConversation(data); setConversationId(data.id); setActivePage("workspace");
+    setOpenedConversation(data); setConversationId(data.id); setConversationStarred(Boolean(data.is_starred)); setStarError(""); setActivePage("workspace");
     if (data.kind === "pdf") {
       setActiveTab("individual");
     } else {
       const firstQuestion = data.messages.find((message) => message.role === "user");
       const lastAnswer = [...data.messages].reverse().find((message) => message.role === "assistant");
-      setTopic(firstQuestion?.content || data.title); setReport(lastAnswer?.content || ""); setActiveTab("nexus");
+      const answerMetadata = lastAnswer?.sources?.find((item) => item?.type === "app_metadata");
+      const savedMode = answerMetadata?.response_mode;
+      const correctedPrompt = answerMetadata?.corrected_prompt;
+      setTopic(firstQuestion?.content || data.title); setReport(lastAnswer?.content || ""); setResponseMode(savedMode || "research");
+      setPromptCorrection(correctedPrompt ? `I interpreted “${firstQuestion?.content || data.title}” as “${correctedPrompt}”.` : "");
+      setActiveTab("nexus");
     }
   };
 
-  if (activePage === "history") {
-    return <div className="app"><Background /><Navbar /><ChatHistory token={token} version={historyVersion} currentId={conversationId} onNew={startNewChat} onSelect={openSavedChat} /></div>;
+  if (activePage === "history" || activePage === "starred") {
+    return (
+      <div className="app">
+        <Background />
+        <Navbar />
+        <ChatHistory token={token} version={historyVersion} currentId={conversationId} onNew={startNewChat} onSelect={openSavedChat} starredOnly={activePage === "starred"} />
+      </div>
+    );
   }
 
   // =======================================================
@@ -579,7 +693,22 @@ function App() {
       <div className="app">
         <Background />
         <Navbar />
-        <Individual token={token} openedConversation={openedConversation} currentConversationId={conversationId} onConversationChange={(id) => { setConversationId(id); if (id === null) setOpenedConversation(null); setHistoryVersion((value) => value + 1); }} />
+        <Individual
+          token={token}
+          openedConversation={openedConversation}
+          currentConversationId={conversationId}
+          conversationStarred={conversationStarred}
+          starUpdating={starUpdating}
+          starError={starError}
+          onToggleStar={handleToggleConversationStar}
+          onConversationChange={(id) => {
+            setConversationId(id);
+            setConversationStarred(false);
+            setStarError("");
+            if (id === null) setOpenedConversation(null);
+            setHistoryVersion((value) => value + 1);
+          }}
+        />
       </div>
     );
   }
@@ -632,7 +761,7 @@ function App() {
             <div className="eyebrow">
               <span></span>
 
-              MULTI-AGENT RESEARCH
+              NEXUS RESEARCH ASSISTANT
             </div>
 
             {/* HERO TITLE */}
@@ -649,10 +778,9 @@ function App() {
             {/* SUBTITLE */}
 
             <p className="subtitle">
-              Ask a question. Let intelligent
-              agents search, read, challenge,
-              and synthesize the signal hidden
-              inside the web.
+              Ask anything. Get a direct answer,
+              or a researched report when your
+              question calls for it.
             </p>
 
             {/* =================================================
@@ -702,7 +830,7 @@ function App() {
                       )
                     }
                     onKeyDown={handleKeyDown}
-                    placeholder="What do you want to investigate?"
+                    placeholder="Ask a question or start a conversation…"
                     rows="2"
                   />
 
@@ -711,7 +839,7 @@ function App() {
                     onClick={runResearch}
                     disabled={!topic.trim()}
                   >
-                    EXPLORE
+                    SEND
 
                     <span>↗</span>
                   </button>
@@ -720,7 +848,7 @@ function App() {
                 <div className="shortcut">
                   <span>⌘</span>
 
-                  ENTER TO RUN
+                  ENTER TO SEND
                 </div>
               </>
             )}
@@ -736,12 +864,10 @@ function App() {
 
                   <div>
 
-                    <span className="progress-label">
-                      RESEARCH IN PROGRESS
-                    </span>
+                    <span className="progress-label">PREPARING A RESPONSE</span>
 
                     <h2>
-                      Investigating
+                      Thinking
 
                       <span>.</span>
 
@@ -758,7 +884,7 @@ function App() {
 
                 </div>
 
-                <div className="agent-pipeline">
+                <div className="agent-pipeline" style={{ display: "none" }} aria-hidden="true">
 
                   {stages.map(
                     (stage, index) => {
@@ -881,36 +1007,58 @@ function App() {
 
                 <span></span>
 
-                RESEARCH OUTPUT
+                {responseMode === "research" ? "RESEARCH OUTPUT" : responseMode === "clarify" ? "QUICK QUESTION" : "CHAT RESPONSE"}
 
               </div>
 
-              <h1>
-                {topic}
-              </h1>
+              <div className="report-title-row">
+                <h1>{topic}</h1>
+                {conversationId && (
+                  <div className="star-control-wrap">
+                    <ChatStarButton starred={conversationStarred} loading={starUpdating} onClick={handleToggleConversationStar} />
+                    {starError && <span className="star-control-error" role="alert">{starError}</span>}
+                  </div>
+                )}
+              </div>
 
               <p>
-                Synthesized by the Nexus
-                multi-agent research pipeline.
+                {responseMode === "research"
+                  ? "Synthesized by the Nexus multi-agent research pipeline."
+                  : responseMode === "clarify"
+                    ? "One quick question so I can help with the right thing."
+                    : "Answered directly by the Nexus assistant."}
               </p>
+              {promptCorrection && <p className="prompt-correction-note">{promptCorrection}</p>}
 
             </div>
 
-            <button
-              type="button"
-              className="new-research"
-              onClick={resetResearch}
-            >
-              <span>+</span>
-
-              NEW RESEARCH
-            </button>
+            <div className="report-header-actions">
+              {conversationId && responseMode === "research" && (
+                <>
+                  <button type="button" className="report-export-button" onClick={() => window.print()}>
+                    ↓ EXPORT PDF
+                  </button>
+                  <button type="button" className="report-export-button" onClick={exportWord} disabled={wordExporting}>
+                    ↓ {wordExporting ? "PREPARING WORD…" : "EXPORT WORD"}
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="new-research"
+                onClick={resetResearch}
+              >
+                <span>+</span>
+                NEW RESEARCH
+              </button>
+            </div>
+            {exportError && <div className="report-export-error" role="alert">{exportError}</div>}
 
           </section>
 
           {/* REPORT PIPELINE */}
 
-          <section className="report-pipeline">
+          {responseMode === "research" && <section className="report-pipeline">
 
             {stages.map(
               (stage, index) => (
@@ -947,7 +1095,7 @@ function App() {
               )
             )}
 
-          </section>
+          </section>}
 
           {/* REPORT CARD */}
 
@@ -956,12 +1104,10 @@ function App() {
             <div className="report-card-top">
 
               <span>
-                FINAL RESEARCH REPORT
+                {responseMode === "research" ? "FINAL RESEARCH REPORT" : responseMode === "clarify" ? "CLARIFICATION" : "DIRECT RESPONSE"}
               </span>
 
-              <span className="report-status">
-                ● VERIFIED
-              </span>
+              {responseMode === "research" && <span className="report-status">● VERIFIED</span>}
 
             </div>
 
@@ -1090,6 +1236,32 @@ function App() {
 
             </div>
           </article>
+
+          <section className="continue-chat" aria-label="Continue this chat">
+            <div className="continue-chat-heading">
+              <span>CONTINUE THIS CHAT</span>
+              <p>Ask a follow-up or answer a clarification. Your conversation will stay together in history.</p>
+            </div>
+            <form className="research-box report-followup" onSubmit={submitFollowUp}>
+              <textarea
+                value={followUpQuestion}
+                onChange={(event) => setFollowUpQuestion(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                placeholder="Ask a follow-up or clarify what you meant…"
+                aria-label="Write a follow-up message"
+                rows="2"
+              />
+              <button type="submit" disabled={!followUpQuestion.trim() || loading}>
+                SEND <span>↗</span>
+              </button>
+            </form>
+            <div className="shortcut">ENTER TO SEND · SHIFT + ENTER FOR A NEW LINE</div>
+          </section>
 
           {/* BOTTOM CTA */}
 

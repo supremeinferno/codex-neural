@@ -3,8 +3,18 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { API_URL } from "./config";
 import { useEffect } from "react";
+import ChatStarButton from "./ChatStarButton.jsx";
 
-function Individual({ token, openedConversation, currentConversationId, onConversationChange }) {
+function Individual({
+    token,
+    openedConversation,
+    currentConversationId,
+    conversationStarred,
+    starUpdating,
+    starError,
+    onToggleStar,
+    onConversationChange,
+}) {
     const [file, setFile] = useState(null);
     const [uploading, setUploading] = useState(false);
     const [document, setDocument] = useState(null);
@@ -231,7 +241,8 @@ function Individual({ token, openedConversation, currentConversationId, onConver
         <div className="individual-page">
 
             <div className="individual-header">
-                <div>
+                <div className="individual-heading-row">
+                    <div>
                     <div className="individual-eyebrow">
                         <span></span>
                         INDIVIDUAL ANALYSIS
@@ -247,6 +258,13 @@ function Individual({ token, openedConversation, currentConversationId, onConver
                         Upload a PDF and interact with its contents
                         using document-aware AI.
                     </p>
+                    </div>
+                    {document && currentConversationId && (
+                        <div className="star-control-wrap">
+                            <ChatStarButton starred={conversationStarred} loading={starUpdating} onClick={onToggleStar} />
+                            {starError && <span className="star-control-error" role="alert">{starError}</span>}
+                        </div>
+                    )}
                 </div>
             </div>
 

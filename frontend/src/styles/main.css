@@ -839,6 +839,43 @@
   color: var(--gold);
 }
 
+/* Research report export actions */
+.report-header-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.report-export-button {
+  padding: 13px 14px;
+  border: 1px solid rgba(205, 166, 77, .32);
+  border-radius: 9px;
+  background: rgba(205, 166, 77, .055);
+  color: #d8c99f;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  cursor: pointer;
+  transition: .2s ease;
+}
+
+.report-export-button:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: rgba(205, 166, 77, .13);
+  color: var(--gold-light);
+}
+
+.report-export-button:disabled { cursor: wait; opacity: .55; }
+
+.report-export-error {
+  flex-basis: 100%;
+  color: #e49a89;
+  font-size: 12px;
+  text-align: right;
+}
+
 
 /* =========================================================
    REPORT PIPELINE
@@ -934,6 +971,33 @@
 
   padding: 65px 40px 80px;
 }
+
+.continue-chat {
+  width: min(790px, 100%);
+  margin: 44px auto 64px;
+}
+
+.continue-chat-heading > span {
+  color: var(--gold);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .18em;
+}
+
+.continue-chat-heading p {
+  margin: 9px 0 14px;
+  color: #77736c;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.report-followup {
+  width: 100%;
+  min-height: 132px;
+  margin-top: 0;
+}
+
+.report-followup textarea { min-height: 62px; }
 
 
 /* =========================================================
@@ -1242,6 +1306,69 @@ footer {
   font-size: 8px;
 
   letter-spacing: 0.18em;
+}
+
+/* Print only the research report; the browser's print dialog can save as PDF. */
+@page { size: A4; margin: 18mm; }
+@media print {
+  html, body, #root, .app {
+    width: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    color: #171717 !important;
+  }
+  body * { visibility: hidden !important; }
+  .report-page, .report-page * { visibility: visible !important; }
+  .report-page {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #171717 !important;
+    animation: none !important;
+  }
+  .navbar, .navigation-drawer, .drawer-scrim, .report-pipeline,
+  .report-header-actions, .report-export-error, .star-control-wrap,
+  .report-card-top, .continue-chat, .bottom-cta, footer {
+    display: none !important;
+  }
+  .report-header {
+    display: block !important;
+    padding: 0 0 12mm !important;
+    border: 0 !important;
+  }
+  .report-heading .eyebrow, .report-heading p { color: #555 !important; }
+  .report-heading h1 {
+    max-width: none !important;
+    margin: 0 0 5mm !important;
+    color: #111 !important;
+    font-size: 27pt !important;
+    line-height: 1.15 !important;
+  }
+  .report-card {
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+  }
+  .report-content {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #171717 !important;
+  }
+  .report-content, .report-content * {
+    color: #171717 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+  .report-content a { color: #174ea6 !important; text-decoration: underline !important; }
+  .report-content pre, .report-content blockquote, .report-content table { break-inside: avoid; }
 }
 
 .footer-brand {
