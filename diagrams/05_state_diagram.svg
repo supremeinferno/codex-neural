@@ -62,7 +62,7 @@
 <text x="1145" y="267" text-anchor="middle" class="small">Tap ☰ to open drawer</text>
 <rect x="1410" y="202" width="400" height="104" rx="16" class="state"/>
 <text x="1610" y="235" text-anchor="middle" class="label">Navigation drawer open</text>
-<text x="1610" y="263" text-anchor="middle" class="small">History · Starred chats (disabled) · Settings (disabled)</text>
+<text x="1610" y="263" text-anchor="middle" class="small">History · Starred chats</text>
 <text x="1610" y="286" text-anchor="middle" class="small">Sign out → revoke session and return to login</text>
 <path d="M885 254 H999" class="arrow"/><text x="915" y="239" class="tiny">menu</text>
 <path d="M1285 254 H1404" class="arrow"/><text x="1314" y="239" class="tiny">open</text>
@@ -76,9 +76,9 @@
 <rect x="880" y="495" width="240" height="75" rx="14" class="stateBlue"/>
 <text x="1000" y="525" text-anchor="middle" class="label">Save question</text><text x="1000" y="549" text-anchor="middle" class="small">Create/reuse conversation</text>
 <rect x="880" y="630" width="240" height="75" rx="14" class="stateBlue"/>
-<text x="1000" y="660" text-anchor="middle" class="label">Research running</text><text x="1000" y="684" text-anchor="middle" class="small">Authenticated pipeline request</text>
+<text x="1000" y="660" text-anchor="middle" class="label">Route and respond</text><text x="1000" y="684" text-anchor="middle" class="small">Direct · clarify · web research</text>
 <rect x="585" y="755" width="240" height="75" rx="14" class="stateGreen"/>
-<text x="705" y="785" text-anchor="middle" class="label">Show report</text><text x="705" y="809" text-anchor="middle" class="small">Save assistant response</text>
+<text x="705" y="785" text-anchor="middle" class="label">Show response</text><text x="705" y="809" text-anchor="middle" class="small">Save assistant message</text>
 <path d="M825 532 H874" class="arrow"/><path d="M1000 570 V624" class="arrow"/><path d="M1000 705 V730 H705 V749" class="arrow"/><path d="M880 668 H850 V800 H862" class="arrowMuted"/>
 <rect x="856" y="760" width="265" height="79" rx="14" class="stateRed"/>
 <text x="988" y="791" text-anchor="middle" class="label">Error / retry</text><text x="988" y="815" text-anchor="middle" class="small">Keep topic; show error</text>
@@ -114,7 +114,7 @@
 <rect x="940" y="990" width="260" height="80" rx="14" class="stateBlue"/>
 <text x="1070" y="1022" text-anchor="middle" class="label">Select saved chat</text><text x="1070" y="1047" text-anchor="middle" class="small">Open only if owned by user</text>
 <rect x="1300" y="977" width="235" height="105" rx="14" class="stateGreen"/>
-<text x="1417" y="1010" text-anchor="middle" class="label">Research chat</text><text x="1417" y="1035" text-anchor="middle" class="small">Restore topic + last report</text><text x="1417" y="1058" text-anchor="middle" class="small">Continue research</text>
+<text x="1417" y="1010" text-anchor="middle" class="label">Research chat</text><text x="1417" y="1035" text-anchor="middle" class="small">Restore saved reply</text><text x="1417" y="1058" text-anchor="middle" class="small">Follow up with recent context</text>
 <rect x="1580" y="977" width="235" height="105" rx="14" class="stateGreen"/>
 <text x="1697" y="1010" text-anchor="middle" class="label">PDF chat</text><text x="1697" y="1035" text-anchor="middle" class="small">Restore PDF + messages</text><text x="1697" y="1058" text-anchor="middle" class="small">Continue asking</text>
 <path d="M845 1030 H934" class="arrow"/><path d="M1200 1025 H1260 V1030 H1294" class="arrow"/><path d="M1200 1040 H1240 V1090 H1697 V1088" class="arrow"/>
@@ -128,6 +128,6 @@
 <path d="M800 306 V390 H1350 V488" class="arrow dash"/><text x="1008" y="385" class="tiny">select PDF analyzer</text>
 
 
-<text x="55" y="1270" class="note">Diagram basis: committed npeep code at HEAD 2c3850e.</text>
-<text x="55" y="1295" class="tiny">Starred chats and Settings are shown as disabled placeholders in the current interface; no behavior is modeled for them.</text>
+<text x="55" y="1270" class="note">This diagram summarizes the implemented authentication, navigation, research, PDF, and history flows on npeep.</text>
+<text x="55" y="1295" class="tiny">Starred chats opens its saved-chat list. Settings is not currently shown in the navigation drawer.</text>
 </svg>
