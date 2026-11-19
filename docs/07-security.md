@@ -50,7 +50,7 @@ This page lists what CODEX does to protect users, and what is still missing. Bei
 | Expired sessions are never deleted | The table grows over time | Delete expired rows on sign-in or on a schedule |
 | Token in `sessionStorage` | Readable by JavaScript if the site ever has an XSS bug | Use an `HttpOnly` cookie |
 | Minimum password length is 6 | Weak passwords allowed | Raise to 8+ and check against common-password lists |
-| No automated tests | Security fixes could break silently later | Add pytest tests for auth and ownership checks |
+| Automated coverage is still limited | Untested routes or changes can regress silently | Expand auth, ownership, failure-path and data-mutation tests as changes are made; see [10-testing.md](10-testing.md) |
 
 ## Reporting a problem
 

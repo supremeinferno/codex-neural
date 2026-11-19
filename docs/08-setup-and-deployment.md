@@ -89,6 +89,21 @@ Restart `npm run dev` after changing `.env`. Vite reads it only at start-up.
 
 To see the admin dashboard, register and sign in as `codexproject9@gmail.com`, or change `ADMIN_EMAIL` (see below).
 
+## Running automated tests
+
+Install backend and frontend test dependencies using the commands in
+[10-testing.md](10-testing.md), then run from the repository root:
+
+```bash
+python -m pytest -c backend/pytest.ini
+npm --prefix frontend test
+npm --prefix frontend run build
+```
+
+Backend tests use a temporary SQLite database; they do not use
+`backend/users.db`. Frontend tests mock API requests. Neither suite requires
+live provider keys or a running application server.
+
 ## Changing the admin
 
 `ADMIN_EMAIL` appears in three files. Change all three:

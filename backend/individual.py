@@ -3,8 +3,11 @@ import re
 import time
 import hashlib
 import fitz
+import logging
 
 from dotenv import load_dotenv
+
+from backend.observability import measure_stage, request_id_context
 
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
@@ -34,6 +37,7 @@ GROQ_MODEL = "openai/gpt-oss-120b"
 # Maximum characters sent to the model for a full-document summary.
 # Lower this if you still hit rate limits, raise it for longer summaries.
 MAX_SUMMARY_CHARACTERS = 30000
+performance_logger = logging.getLogger("backend.performance")
 
 
 # =========================================================
@@ -71,7 +75,13 @@ def is_rate_limit_error(error):
     return "429" in str(error) and "rate" in str(error).lower()
 
 
-def invoke_with_retry(llm, prompt, attempts=3, wait_seconds=8):
+def invoke_with_retry(
+    llm,
+    prompt,
+    attempts=3,
+    wait_seconds=8,
+    operation="pdf_llm",
+):
     """
     Calls the model. If the service reports a rate limit,
     waits and tries again before giving up.
@@ -80,11 +90,17 @@ def invoke_with_retry(llm, prompt, attempts=3, wait_seconds=8):
     return run_with_retry(
         lambda: llm.invoke(prompt),
         attempts,
-        wait_seconds
+        wait_seconds,
+        operation,
     )
 
 
-def run_with_retry(action, attempts=3, wait_seconds=8):
+def run_with_retry(
+    action,
+    attempts=3,
+    wait_seconds=8,
+    operation="pdf_external_call",
+):
     """
     Runs any call (LLM or embeddings). On a rate limit,
     waits and tries again before giving up.
@@ -103,7 +119,16 @@ def run_with_retry(action, attempts=3, wait_seconds=8):
             if attempt == attempts - 1:
                 raise
 
-            time.sleep(wait_seconds * (attempt + 1))
+            delay_seconds = wait_seconds * (attempt + 1)
+            performance_logger.warning(
+                "event=provider_retry operation=%s attempt=%s "
+                "delay_seconds=%s request_id=%s",
+                operation,
+                attempt + 1,
+                delay_seconds,
+                request_id_context.get(),
+            )
+            time.sleep(delay_seconds)
 
 
 # =========================================================
@@ -258,11 +283,12 @@ def build_individual_index(pdf_bytes, document_name):
         with open(pdf_path, "wb") as file:
             file.write(pdf_bytes)
 
-    documents = extract_pdf_documents(
-        pdf_path,
-        document_id,
-        document_name
-    )
+    with measure_stage("pdf_extract"):
+        documents = extract_pdf_documents(
+            pdf_path,
+            document_id,
+            document_name
+        )
 
     if not documents:
         return {
@@ -273,7 +299,8 @@ def build_individual_index(pdf_bytes, document_name):
             "chunks": 0
         }
 
-    chunks = chunk_documents(documents)
+    with measure_stage("pdf_chunk"):
+        chunks = chunk_documents(documents)
 
     if not chunks:
         return {
@@ -284,18 +311,20 @@ def build_individual_index(pdf_bytes, document_name):
             "chunks": 0
         }
 
-    vectorstore = Chroma(
-        persist_directory=INDIVIDUAL_DB_PATH,
-        collection_name=COLLECTION_NAME,
-        embedding_function=load_embeddings()
-    )
+    with measure_stage("pdf_vector_store_open"):
+        vectorstore = Chroma(
+            persist_directory=INDIVIDUAL_DB_PATH,
+            collection_name=COLLECTION_NAME,
+            embedding_function=load_embeddings()
+        )
 
-    existing = vectorstore.get(
-        where={
-            "document_id": document_id
-        },
-        include=[]
-    )
+    with measure_stage("pdf_existing_index_lookup"):
+        existing = vectorstore.get(
+            where={
+                "document_id": document_id
+            },
+            include=[]
+        )
 
     existing_ids = existing.get("ids", [])
 
@@ -310,7 +339,11 @@ def build_individual_index(pdf_bytes, document_name):
         }
 
     try:
-        run_with_retry(lambda: vectorstore.add_documents(chunks))
+        with measure_stage("pdf_embedding_and_index"):
+            run_with_retry(
+                lambda: vectorstore.add_documents(chunks),
+                operation="pdf_embedding",
+            )
 
     except Exception as error:
 
@@ -486,17 +519,23 @@ DOCUMENT CONTENT:
 {full_context}
 """
 
-    response = invoke_with_retry(llm, prompt)
+    with measure_stage("pdf_summary_llm"):
+        response = invoke_with_retry(
+            llm,
+            prompt,
+            operation="pdf_summary_llm",
+        )
 
     return response.content
 
 
 def _answer_individual_question(question, document_id):
-    vectorstore = Chroma(
-        persist_directory=INDIVIDUAL_DB_PATH,
-        collection_name=COLLECTION_NAME,
-        embedding_function=load_embeddings()
-    )
+    with measure_stage("pdf_vector_store_open"):
+        vectorstore = Chroma(
+            persist_directory=INDIVIDUAL_DB_PATH,
+            collection_name=COLLECTION_NAME,
+            embedding_function=load_embeddings()
+        )
 
     # Full-document summary mode
     if is_summary_question(question):
@@ -530,9 +569,11 @@ def _answer_individual_question(question, document_id):
         }
     )
 
-    relevant_documents = run_with_retry(
-        lambda: retriever.invoke(question)
-    )
+    with measure_stage("pdf_retrieval"):
+        relevant_documents = run_with_retry(
+            lambda: retriever.invoke(question),
+            operation="pdf_retrieval",
+        )
 
     if not relevant_documents:
         return {
@@ -574,7 +615,12 @@ USER QUESTION:
 {question}
 """
 
-    response = invoke_with_retry(llm, prompt)
+    with measure_stage("pdf_answer_llm"):
+        response = invoke_with_retry(
+            llm,
+            prompt,
+            operation="pdf_answer_llm",
+        )
 
     return {
         "success": True,

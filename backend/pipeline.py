@@ -1,5 +1,7 @@
 import re
 
+from backend.observability import measure_stage
+
 from backend.agents import (
     build_research_agent,
     writer_chain,
@@ -64,19 +66,19 @@ def run_research_pipeline(topic: str) -> dict:
 
     search_agent = build_research_agent()
 
-    search_result = search_agent.invoke({
-        "messages": [
-            (
-                "user",
-                f"Find recent, reliable and detailed information about: {topic}"
-            )
-        ]
-    })
+    with measure_stage("research_search"):
+        search_result = search_agent.invoke({
+            "messages": [
+                (
+                    "user",
+                    f"Find recent, reliable and detailed information about: {topic}"
+                )
+            ]
+        })
 
     state["search_results"] = search_result["messages"][-1].content
 
-    print("\nSearch result:\n")
-    print(state["search_results"])
+    print("\nSearch completed.")
 
     # ============================================================
     # STEP 2 - SCRAPE SOURCE DIRECTLY
@@ -95,10 +97,11 @@ def run_research_pipeline(topic: str) -> dict:
     if urls:
 
         url = urls[0].rstrip(".,")
-        print(f"\nScraping URL: {url}")
+        print("\nScraping the first search result.")
 
         try:
-            state["scraped_content"] = scrape_webpage.invoke({"url": url})
+            with measure_stage("research_scrape"):
+                state["scraped_content"] = scrape_webpage.invoke({"url": url})
 
         except Exception as e:
             state["scraped_content"] = (
@@ -112,8 +115,7 @@ def run_research_pipeline(topic: str) -> dict:
             "No URL was found in the search results."
         )
 
-    print("\nScraped content:\n")
-    print(state["scraped_content"])
+    print("\nScraping completed.")
 
     # ============================================================
     # STEP 3 - WRITER
@@ -130,17 +132,17 @@ def run_research_pipeline(topic: str) -> dict:
         f"{state['scraped_content'][:6000]}"
     )
 
-    generated_output = writer_chain.invoke({
-        "topic": topic,
-        "research": research_combined,
-    })
+    with measure_stage("research_write"):
+        generated_output = writer_chain.invoke({
+            "topic": topic,
+            "research": research_combined,
+        })
     state["title"], state["report"] = _parse_report_output(
         topic,
         generated_output,
     )
 
-    print("\nFinal Report:\n")
-    print(state["report"])
+    print("\nReport writing completed.")
 
     # ============================================================
     # STEP 4 - CRITIC
@@ -158,8 +160,7 @@ def run_research_pipeline(topic: str) -> dict:
         "Mistral rate limit was reached."
     )
 
-    print("\nCritic report:\n")
-    print(state["feedback"])
+    print("\nCritic stage completed.")
 
     # ============================================================
     # RETURN FINAL STATE

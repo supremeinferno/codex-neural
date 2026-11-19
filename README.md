@@ -22,6 +22,10 @@ Other features: user accounts with email OTP password reset, saved chat history 
 | [Security](docs/07-security.md) | What is protected, and known gaps |
 | [Setup and deployment](docs/08-setup-and-deployment.md) | Install, environment variables, deploy, troubleshooting |
 | [Project history](docs/09-project-history.md) | Timeline, team roles and design decisions |
+| [Performance measurement](docs/performance-measurement.md) | Request/stage timing logs, privacy and bottleneck workflow |
+
+For a PowerShell command cheat sheet with setup prerequisites, app startup,
+build, test, and log-analysis commands, see [COMMANDS.md](COMMANDS.md).
 
 ## How it works
 

@@ -9,7 +9,12 @@ from pathlib import Path
 from datetime import datetime
 import json
 import os
+import logging
+import time
+import uuid
 from fastapi import Depends
+
+from backend.observability import request_id_context
 
 
 # =========================================================
@@ -63,6 +68,36 @@ app = FastAPI(
     description="Multi-Agent AI Research System",
     version="1.0.0",
 )
+
+performance_logger = logging.getLogger("backend.performance")
+
+
+@app.middleware("http")
+async def measure_http_request(request, call_next):
+    request_id = uuid.uuid4().hex
+    context_token = request_id_context.set(request_id)
+    started_at = time.perf_counter()
+    status_code = 500
+
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        route = request.scope.get("route")
+        route_template = getattr(route, "path", "unmatched")
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        performance_logger.info(
+            "event=http_request method=%s route=%s status_code=%s "
+            "duration_ms=%.2f request_id=%s",
+            request.method,
+            route_template,
+            status_code,
+            elapsed_ms,
+            request_id,
+        )
+        request_id_context.reset(context_token)
 
 
 # =========================================================
