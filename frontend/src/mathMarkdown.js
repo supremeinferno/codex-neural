@@ -1,5 +1,5 @@
 const MATH_COMMAND_PATTERN =
-  /\\(?:frac|int|sum|prod|sqrt|lim|alpha|beta|gamma|theta|pi|sin|cos|tan|log|ln|cdot|times|neq|leq|geq|approx|infty|partial|Delta|sigma|omega|left|right|text)\b/;
+  /\\(?:frac|int|sum|prod|sqrt|lim|alpha|beta|gamma|theta|pi|sin|cos|tan|log|ln|cdot|times|neq|leq|geq|approx|infty|partial|Delta|sigma|omega|left|right|text)(?![A-Za-z])/;
 
 const isEquationLike = (text) =>
   MATH_COMMAND_PATTERN.test(text) &&
@@ -7,7 +7,7 @@ const isEquationLike = (text) =>
 
 const isStandaloneEquation = (text) =>
   isEquationLike(text) &&
-  /^(?:\\(?:frac|int|sum|prod|sqrt|lim|alpha|beta|gamma|theta|pi|sin|cos|tan|log|ln|partial|Delta|sigma|omega)\b|[A-Za-z][A-Za-z0-9_{}^]*\s*[=<>])/.test(text);
+  /^(?:\\(?:frac|int|sum|prod|sqrt|lim|alpha|beta|gamma|theta|pi|sin|cos|tan|log|ln|partial|Delta|sigma|omega)(?![A-Za-z])|[A-Za-z][A-Za-z0-9_{}^]*\s*[=<>])/.test(text);
 
 const normalizeParentheticalMath = (text) => {
   let result = "";
